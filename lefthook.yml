@@ -6,15 +6,15 @@ pre-commit:
     rust-clippy:
       run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     eslint:
-      run: pnpm eslint .
+      run: TMPDIR=/tmp pnpm eslint .
     prettier:
-      run: pnpm prettier --check "src/**/*.{ts,tsx}"
+      run: TMPDIR=/tmp pnpm prettier --check "src/**/*.{ts,tsx}"
     tsc:
-      run: pnpm tsc --noEmit
+      run: TMPDIR=/tmp pnpm tsc --noEmit
 
 pre-push:
   commands:
     test-rust:
       run: cd src-tauri && cargo nextest run --workspace
     test-frontend:
-      run: pnpm vitest run
+      run: TMPDIR=/tmp pnpm vitest run

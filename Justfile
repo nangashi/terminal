@@ -3,7 +3,7 @@ default:
 
 # Development
 dev:
-    pnpm tauri dev
+    TMPDIR=/tmp pnpm tauri dev
 
 # Lint & Format checks
 lint: lint-rust lint-frontend
@@ -13,15 +13,17 @@ lint-rust:
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     cd src-tauri && cargo deny check
 
+# Claude Code sandbox sets TMPDIR=/tmp/claude which doesn't exist.
+# Override TMPDIR for pnpm commands to use a writable temp directory.
 lint-frontend:
-    pnpm tsc --noEmit
-    pnpm eslint .
-    pnpm prettier --check "src/**/*.{ts,tsx}"
+    TMPDIR=/tmp pnpm tsc --noEmit
+    TMPDIR=/tmp pnpm eslint .
+    TMPDIR=/tmp pnpm prettier --check "src/**/*.{ts,tsx}"
 
 # Format
 fmt:
     cargo fmt --manifest-path src-tauri/Cargo.toml
-    pnpm prettier --write "src/**/*.{ts,tsx}"
+    TMPDIR=/tmp pnpm prettier --write "src/**/*.{ts,tsx}"
 
 # Tests
 test: test-rust test-frontend
@@ -30,8 +32,8 @@ test-rust:
     cd src-tauri && cargo nextest run --workspace
 
 test-frontend:
-    pnpm vitest run
+    TMPDIR=/tmp pnpm vitest run
 
 # Build
 build:
-    pnpm tauri build
+    TMPDIR=/tmp pnpm tauri build
