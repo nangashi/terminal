@@ -1,0 +1,139 @@
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  background: #181825;
+  user-select: none;
+  -webkit-user-select: none;
+  border-bottom: 1px solid #11111b;
+}
+
+/* Drag region + tabs area */
+.titlebar-tabs {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding-left: 8px;
+  overflow: hidden;
+}
+
+/* Tab */
+.titlebar-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 14px;
+  width: 200px;
+  min-width: 60px;
+  flex-shrink: 1;
+  background: #181825;
+  border-radius: 6px 6px 0 0;
+  margin-top: 4px;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.titlebar-tab:hover {
+  background: rgba(205, 214, 244, 0.06);
+}
+
+.titlebar-tab.active {
+  background: #1e1e2e;
+}
+
+.titlebar-tab.drag-over {
+  box-shadow: inset 2px 0 0 #89b4fa;
+}
+
+.titlebar-tab .tab-label {
+  font-family: "HackGen35 Console NF", sans-serif;
+  font-size: 12px;
+  color: #6c7086;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.titlebar-tab.active .tab-label {
+  color: #cdd6f4;
+}
+
+/* Tab close button */
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.titlebar-tab:hover .tab-close,
+.titlebar-tab.active .tab-close {
+  color: #6c7086;
+}
+
+.tab-close:hover {
+  background: rgba(205, 214, 244, 0.15);
+  color: #cdd6f4 !important;
+}
+
+/* New tab button */
+.titlebar-new-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex-shrink: 0;
+  margin: 6px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c7086;
+  cursor: pointer;
+}
+
+.titlebar-new-tab:hover {
+  background: rgba(205, 214, 244, 0.1);
+  color: #cdd6f4;
+}
+
+/* Window controls */
+.titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.titlebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: #6c7086;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.titlebar-btn:hover {
+  background: rgba(205, 214, 244, 0.1);
+  color: #cdd6f4;
+}
+
+.titlebar-btn-close:hover {
+  background: #e64553;
+  color: #ffffff;
+}

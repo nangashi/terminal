@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import App from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -8,6 +8,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({
+    minimize: vi.fn(),
+    toggleMaximize: vi.fn(),
+    close: vi.fn(),
+  })),
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -36,8 +44,9 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 describe("App", () => {
-  it("renders terminal view", () => {
-    const { container } = render(<App />);
-    expect(container.firstChild).toBeInstanceOf(HTMLDivElement);
+  it("renders title bar and terminal", () => {
+    render(<App />);
+    expect(screen.getByTitle("New tab")).toBeInstanceOf(HTMLButtonElement);
+    expect(screen.getByTitle("Close")).toBeInstanceOf(HTMLButtonElement);
   });
 });

@@ -19,6 +19,12 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
 
+    // Keep callback refs so the xterm event handlers always call the latest version
+    const onDataRef = useRef(onData);
+    onDataRef.current = onData;
+    const onResizeRef = useRef(onResize);
+    onResizeRef.current = onResize;
+
     useImperativeHandle(ref, () => ({
       write: (data: string) => {
         terminalRef.current?.write(data);
@@ -55,11 +61,11 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       fitAddon.fit();
 
       terminal.onData((data) => {
-        onData?.(data);
+        onDataRef.current?.(data);
       });
 
       terminal.onResize(({ cols, rows }) => {
-        onResize?.(cols, rows);
+        onResizeRef.current?.(cols, rows);
       });
 
       const resizeObserver = new ResizeObserver(() => {
@@ -74,7 +80,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         terminal.dispose();
         terminalRef.current = null;
       };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
       <div
