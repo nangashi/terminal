@@ -1,4 +1,26 @@
 [advisories]
+# Tauri の間接依存（GTK3 バインディング等）で未解消のアドバイザリ
+# Tauri 側で対応され次第、順次削除する
+ignore = [
+    "RUSTSEC-2024-0370", # proc-macro-error is unmaintained
+    "RUSTSEC-2024-0411", # gtk-rs GTK3 bindings - atk
+    "RUSTSEC-2024-0412", # gtk-rs GTK3 bindings - atk-sys
+    "RUSTSEC-2024-0413", # gtk-rs GTK3 bindings - gdk
+    "RUSTSEC-2024-0414", # gtk-rs GTK3 bindings - gdk-sys
+    "RUSTSEC-2024-0415", # gtk-rs GTK3 bindings - gdkx11
+    "RUSTSEC-2024-0416", # gtk-rs GTK3 bindings - gdkx11-sys
+    "RUSTSEC-2024-0417", # gtk-rs GTK3 bindings - gtk
+    "RUSTSEC-2024-0418", # gtk-rs GTK3 bindings - gtk-sys
+    "RUSTSEC-2024-0419", # gtk-rs GTK3 bindings - gtk3-macros
+    "RUSTSEC-2024-0420", # gtk-rs GTK3 bindings - gdkwayland-sys
+    "RUSTSEC-2017-0008", # fxhash - no longer maintained
+    "RUSTSEC-2025-0057", # serial crate is unmaintained (via portable-pty)
+    "RUSTSEC-2025-0075", # unic-ucd-ident is unmaintained
+    "RUSTSEC-2025-0080", # unic-common is unmaintained
+    "RUSTSEC-2025-0081", # unic-ucd-version is unmaintained
+    "RUSTSEC-2025-0098", # unic-char-property is unmaintained
+    "RUSTSEC-2025-0100", # unic-char-range is unmaintained
+]
 
 [licenses]
 allow = [
