@@ -87,6 +87,19 @@ impl PtyManager {
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone reader: {e}"))?;
 
+        // Insert instance BEFORE spawning reader thread to avoid race condition
+        // where the reader thread tries to remove an entry that doesn't exist yet.
+        let instance = PtyInstance {
+            master: pair.master,
+            writer,
+            child,
+        };
+
+        self.instances
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(id, instance);
+
         let instances = Arc::clone(&self.instances);
 
         // Spawn a thread to read PTY output
@@ -111,17 +124,6 @@ impl PtyManager {
             }
             on_exit(id);
         });
-
-        let instance = PtyInstance {
-            master: pair.master,
-            writer,
-            child,
-        };
-
-        self.instances
-            .lock()
-            .map_err(|e| e.to_string())?
-            .insert(id, instance);
 
         Ok(id)
     }
@@ -169,10 +171,15 @@ impl PtyManager {
     ///
     /// Returns an error if the mutex is poisoned.
     pub fn close(&self, id: PtyId) -> Result<(), String> {
-        self.instances
+        if let Some(mut instance) = self
+            .instances
             .lock()
             .map_err(|e| e.to_string())?
-            .remove(&id);
+            .remove(&id)
+        {
+            instance.child.kill().ok();
+            instance.child.wait().ok();
+        }
         Ok(())
     }
 }
