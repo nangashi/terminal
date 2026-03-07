@@ -11,7 +11,7 @@
 .pane-list-item {
   display: flex;
   align-items: center;
-  padding: 10px 12px;
+  padding: 12px 12px;
   cursor: pointer;
   color: var(--color-text);
   font-size: 13px;
@@ -40,7 +40,16 @@
   min-width: 0;
 }
 
+.pane-list-item__label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .pane-list-item__label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,4 +79,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pane-list-item__claude {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pane-list-item__claude-status {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 32px;
+}
+
+.pane-list-item__claude-working {
+  color: var(--color-blue);
+}
+
+.pane-list-item__claude-dot {
+  animation: claude-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes claude-pulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pane-list-item__claude-idle {
+  color: var(--color-yellow);
 }

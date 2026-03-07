@@ -14,10 +14,11 @@ interface TerminalViewProps {
   isActive?: boolean;
   onData?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
+  onTitleChange?: (title: string) => void;
 }
 
 export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
-  function TerminalView({ isActive, onData, onResize }, ref) {
+  function TerminalView({ isActive, onData, onResize, onTitleChange }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const isActiveRef = useRef(isActive);
@@ -28,6 +29,8 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
     onDataRef.current = onData;
     const onResizeRef = useRef(onResize);
     onResizeRef.current = onResize;
+    const onTitleChangeRef = useRef(onTitleChange);
+    onTitleChangeRef.current = onTitleChange;
 
     useImperativeHandle(ref, () => ({
       write: (data: string) => {
@@ -82,6 +85,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
 
       terminal.onResize(({ cols, rows }) => {
         onResizeRef.current?.(cols, rows);
+      });
+
+      terminal.onTitleChange((title) => {
+        onTitleChangeRef.current?.(title);
       });
 
       const resizeObserver = new ResizeObserver(() => {

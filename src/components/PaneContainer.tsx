@@ -18,6 +18,7 @@ interface PaneContainerProps {
   onPaneRef: (paneId: string, handle: TerminalHandle | null) => void;
   onPaneFocus: (paneId: string) => void;
   onDividerDrag: (splitNodeId: string, delta: number) => void;
+  onTitleChange: (paneId: string, title: string) => void;
 }
 
 export function PaneContainer({
@@ -28,6 +29,7 @@ export function PaneContainer({
   onPaneRef,
   onPaneFocus,
   onDividerDrag,
+  onTitleChange,
 }: PaneContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 });
@@ -70,6 +72,7 @@ export function PaneContainer({
           onResize={onResize}
           onPaneRef={onPaneRef}
           onPaneFocus={onPaneFocus}
+          onTitleChange={onTitleChange}
         />
       ))}
       {dividerRects.map((dr) => (
@@ -95,6 +98,7 @@ interface LeafPaneProps {
   onResize: (paneId: string, cols: number, rows: number) => void;
   onPaneRef: (paneId: string, handle: TerminalHandle | null) => void;
   onPaneFocus: (paneId: string) => void;
+  onTitleChange: (paneId: string, title: string) => void;
 }
 
 function LeafPane({
@@ -106,6 +110,7 @@ function LeafPane({
   onResize,
   onPaneRef,
   onPaneFocus,
+  onTitleChange,
 }: LeafPaneProps) {
   const handleData = useCallback(
     (data: string) => onData(paneId, data),
@@ -122,6 +127,10 @@ function LeafPane({
   const handleClick = useCallback(
     () => onPaneFocus(paneId),
     [paneId, onPaneFocus],
+  );
+  const handleTitleChange = useCallback(
+    (title: string) => onTitleChange(paneId, title),
+    [paneId, onTitleChange],
   );
 
   const style: React.CSSProperties = {
@@ -143,6 +152,7 @@ function LeafPane({
         isActive={isActive}
         onData={handleData}
         onResize={handleResize}
+        onTitleChange={handleTitleChange}
       />
     </div>
   );

@@ -13,6 +13,7 @@ export function setupXtermMocks() {
       open = vi.fn();
       onData = vi.fn();
       onResize = vi.fn();
+      onTitleChange = vi.fn();
       dispose = vi.fn();
       focus = vi.fn();
       write = vi.fn((data: unknown) => {

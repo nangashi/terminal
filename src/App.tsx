@@ -8,6 +8,7 @@ import { PrefixModeIndicator } from "./components/PrefixModeIndicator";
 import { Sidebar, PaneInfo } from "./components/Sidebar";
 import { usePrefixKey, PrefixAction } from "./hooks/usePrefixKey";
 import { usePaneMetadata } from "./hooks/usePaneMetadata";
+import { useClaudeStatus } from "./hooks/useClaudeStatus";
 import { Tab, PaneNode } from "./types";
 import {
   createLeaf,
@@ -72,6 +73,7 @@ function App() {
   });
   const [activeTabId, setActiveTabId] = useState(() => tabStates[0].tab.id);
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const { claudeStatus, handleTitleChange } = useClaudeStatus();
 
   // paneId -> TerminalHandle
   const termRefs = useRef<Map<string, TerminalHandle>>(new Map());
@@ -120,6 +122,7 @@ function App() {
         ptyToPane.current.delete(ptyId);
         paneToPty.current.delete(mapping.paneId);
         termRefs.current.delete(mapping.paneId);
+        handleTitleChange(mapping.paneId, "");
 
         setTabStates((prev) => {
           const tabState = prev.find((s) => s.tab.id === mapping.tabId);
@@ -168,7 +171,7 @@ function App() {
     return () => {
       for (const unlisten of unlistenRefs.current) unlisten();
     };
-  }, []);
+  }, [handleTitleChange]);
 
   // Spawn PTY for panes that don't have one
   useEffect(() => {
@@ -543,6 +546,7 @@ function App() {
           <Sidebar
             panes={sidebarPanes}
             metadata={paneMetadata}
+            claudeStatus={claudeStatus}
             onSelectPane={handlePaneFocus}
           />
         )}
@@ -567,6 +571,7 @@ function App() {
                 onPaneRef={handlePaneRef}
                 onPaneFocus={handlePaneFocus}
                 onDividerDrag={handleDividerDrag}
+                onTitleChange={handleTitleChange}
               />
             </div>
           ))}

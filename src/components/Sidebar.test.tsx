@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar, PaneInfo } from "./Sidebar";
 import { PaneMetadata } from "../hooks/usePaneMetadata";
+import { ClaudeState } from "../hooks/useClaudeStatus";
 
 const emptyMetadata = new Map<string, PaneMetadata>();
+const emptyClaudeStatus = new Map<string, ClaudeState>();
 
 function makePanes(count: number, activeIndex = 0): PaneInfo[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -19,6 +21,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(3)}
         metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -32,6 +35,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(3)}
         metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -45,6 +49,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(3, 1)}
         metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -60,6 +65,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(3)}
         metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={onSelectPane}
       />,
     );
@@ -81,6 +87,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -96,6 +103,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -116,6 +124,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -140,6 +149,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -161,6 +171,7 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
@@ -181,9 +192,59 @@ describe("Sidebar", () => {
       <Sidebar
         panes={makePanes(1)}
         metadata={metadata}
+        claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
       />,
     );
     expect(screen.getByText("~/work")).toBeTruthy();
+  });
+
+  it("does not show claude indicator when claudeStatus is empty", () => {
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    expect(document.querySelector(".pane-list-item__claude")).toBeNull();
+  });
+
+  it("shows working indicator with animated dots", () => {
+    const claudeStatus = new Map<string, ClaudeState>([
+      ["pane-1", { status: "working" }],
+    ]);
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={emptyMetadata}
+        claudeStatus={claudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    const indicator = document.querySelector(".pane-list-item__claude-working");
+    expect(indicator).toBeTruthy();
+    const dots = document.querySelectorAll(".pane-list-item__claude-dot");
+    expect(dots.length).toBe(3);
+    expect(screen.getByText("\uD83E\uDD16")).toBeTruthy();
+  });
+
+  it("shows idle indicator with text", () => {
+    const claudeStatus = new Map<string, ClaudeState>([
+      ["pane-1", { status: "idle" }],
+    ]);
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={emptyMetadata}
+        claudeStatus={claudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    const indicator = document.querySelector(".pane-list-item__claude-idle");
+    expect(indicator).toBeTruthy();
+    expect(screen.getByText("\u5F85\u6A5F")).toBeTruthy();
+    expect(screen.getByText("\uD83E\uDD16")).toBeTruthy();
   });
 });
