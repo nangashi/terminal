@@ -34,4 +34,11 @@ export function setupXtermMocks() {
       dispose = vi.fn();
     },
   }));
+
+  vi.mock("@xterm/addon-webgl", () => ({
+    WebglAddon: class MockWebglAddon {
+      onContextLoss = vi.fn();
+      dispose = vi.fn();
+    },
+  }));
 }

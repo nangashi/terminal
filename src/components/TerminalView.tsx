@@ -2,6 +2,7 @@ import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 export interface TerminalHandle {
@@ -64,6 +65,15 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
       terminal.open(container);
+
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => webglAddon.dispose());
+        terminal.loadAddon(webglAddon);
+      } catch {
+        // WebGL2 unavailable — falls back to default canvas renderer
+      }
+
       fitAddon.fit();
 
       terminal.onData((data) => {
