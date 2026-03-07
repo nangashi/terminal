@@ -11,6 +11,7 @@
   --color-blue: #89b4fa;
   --color-red: #e64553;
   --color-surface: #313244;
+  --color-on-danger: #ffffff;
 }
 
 * {

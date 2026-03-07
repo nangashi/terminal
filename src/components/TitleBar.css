@@ -135,5 +135,5 @@
 
 .titlebar-btn-close:hover {
   background: var(--color-red);
-  color: #ffffff;
+  color: var(--color-on-danger);
 }
