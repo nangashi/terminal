@@ -34,6 +34,17 @@ function cwdDisplayName(cwd: string): string {
   return parts[parts.length - 1] || cwd;
 }
 
+function cwdShortPath(cwd: string): string {
+  const homeMatch = cwd.match(/^\/home\/[^/]+/);
+  if (homeMatch) {
+    return "~" + cwd.slice(homeMatch[0].length);
+  }
+  if (cwd.startsWith("/root")) {
+    return "~" + cwd.slice("/root".length);
+  }
+  return cwd;
+}
+
 interface PaneListItemProps {
   pane: PaneInfo;
   metadata: PaneMetadata | undefined;
@@ -52,6 +63,8 @@ function PaneListItem({ pane, metadata, onSelectPane }: PaneListItemProps) {
       ? cwdDisplayName(metadata.cwd)
       : `Pane ${pane.index}`;
 
+  const cwd = metadata?.cwd;
+
   return (
     <div
       className={`pane-list-item${pane.isActive ? " pane-list-item--active" : ""}`}
@@ -65,7 +78,11 @@ function PaneListItem({ pane, metadata, onSelectPane }: PaneListItemProps) {
             className={`pane-list-item__branch${git.isDirty ? " pane-list-item__branch--dirty" : ""}`}
           >
             {git.branch}
+            {git.isDirty && <span className="pane-list-item__dirty"> ●</span>}
           </span>
+        )}
+        {cwd && (
+          <span className="pane-list-item__cwd">{cwdShortPath(cwd)}</span>
         )}
       </div>
     </div>

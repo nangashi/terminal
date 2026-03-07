@@ -11,7 +11,7 @@
 .pane-list-item {
   display: flex;
   align-items: center;
-  padding: 6px 12px;
+  padding: 10px 12px;
   cursor: pointer;
   color: var(--color-text);
   font-size: 13px;
@@ -56,4 +56,18 @@
 
 .pane-list-item__branch--dirty {
   color: var(--color-yellow);
+}
+
+.pane-list-item__dirty {
+  font-size: 9px;
+  vertical-align: middle;
+}
+
+.pane-list-item__cwd {
+  font-size: 10px;
+  color: var(--color-subtext);
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

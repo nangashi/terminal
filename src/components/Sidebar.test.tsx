@@ -119,9 +119,71 @@ describe("Sidebar", () => {
         onSelectPane={() => {}}
       />,
     );
-    const branchEl = screen.getByText("dev");
+    const branchEl = screen.getByText(/^dev/);
     expect(branchEl.classList.contains("pane-list-item__branch--dirty")).toBe(
       true,
     );
+    expect(branchEl.querySelector(".pane-list-item__dirty")).toBeTruthy();
+  });
+
+  it("does not show dirty marker for clean branch", () => {
+    const metadata = new Map<string, PaneMetadata>([
+      [
+        "pane-1",
+        {
+          cwd: "/home/user/terminal",
+          git: { repoName: "terminal", branch: "main", isDirty: false },
+        },
+      ],
+    ]);
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={metadata}
+        onSelectPane={() => {}}
+      />,
+    );
+    const branchEl = screen.getByText("main");
+    expect(branchEl.querySelector(".pane-list-item__dirty")).toBeNull();
+  });
+
+  it("displays shortened cwd path", () => {
+    const metadata = new Map<string, PaneMetadata>([
+      [
+        "pane-1",
+        {
+          cwd: "/home/user/projects/myapp",
+          git: null,
+        },
+      ],
+    ]);
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={metadata}
+        onSelectPane={() => {}}
+      />,
+    );
+    expect(screen.getByText("~/projects/myapp")).toBeTruthy();
+  });
+
+  it("displays cwd under /root as ~", () => {
+    const metadata = new Map<string, PaneMetadata>([
+      [
+        "pane-1",
+        {
+          cwd: "/root/work",
+          git: null,
+        },
+      ],
+    ]);
+    render(
+      <Sidebar
+        panes={makePanes(1)}
+        metadata={metadata}
+        onSelectPane={() => {}}
+      />,
+    );
+    expect(screen.getByText("~/work")).toBeTruthy();
   });
 });
