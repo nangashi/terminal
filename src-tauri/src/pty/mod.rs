@@ -278,4 +278,162 @@ mod tests {
             .expect("Exit callback not fired");
         assert_eq!(exit_id, id);
     }
+
+    #[test]
+    fn multiple_pty_output_isolation() {
+        let manager = PtyManager::new();
+        let (tx1, rx1) = mpsc::channel();
+        let (tx2, rx2) = mpsc::channel();
+
+        let id1 = manager
+            .spawn(
+                "/bin/sh",
+                80,
+                24,
+                Box::new(move |_id, data| {
+                    let _ = tx1.send(data);
+                }),
+                noop_exit(),
+            )
+            .expect("Failed to spawn PTY 1");
+
+        let id2 = manager
+            .spawn(
+                "/bin/sh",
+                80,
+                24,
+                Box::new(move |_id, data| {
+                    let _ = tx2.send(data);
+                }),
+                noop_exit(),
+            )
+            .expect("Failed to spawn PTY 2");
+
+        // Write MARKER only to PTY 1
+        manager
+            .write(id1, b"echo MARKER_PTY1\n")
+            .expect("Failed to write to PTY 1");
+
+        // Wait for PTY 1 to output MARKER
+        let mut found_in_pty1 = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Ok(data) = rx1.recv_timeout(Duration::from_millis(100)) {
+                if String::from_utf8_lossy(&data).contains("MARKER_PTY1") {
+                    found_in_pty1 = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_in_pty1, "Expected MARKER_PTY1 in PTY 1 output");
+
+        // Verify PTY 2 did NOT receive MARKER
+        let mut found_in_pty2 = false;
+        while let Ok(data) = rx2.recv_timeout(Duration::from_millis(500)) {
+            if String::from_utf8_lossy(&data).contains("MARKER_PTY1") {
+                found_in_pty2 = true;
+                break;
+            }
+        }
+        assert!(
+            !found_in_pty2,
+            "MARKER_PTY1 should NOT appear in PTY 2 output"
+        );
+
+        manager.close(id1).expect("Failed to close PTY 1");
+        manager.close(id2).expect("Failed to close PTY 2");
+    }
+
+    #[test]
+    fn nonexistent_id_returns_error() {
+        let manager = PtyManager::new();
+
+        let write_result = manager.write(9999, b"test");
+        assert!(write_result.is_err());
+        assert!(write_result.unwrap_err().contains("not found"));
+
+        let resize_result = manager.resize(9999, 80, 24);
+        assert!(resize_result.is_err());
+        assert!(resize_result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn spawn_invalid_shell_returns_error() {
+        let manager = PtyManager::new();
+        let result = manager.spawn(
+            "/nonexistent/shell",
+            80,
+            24,
+            Box::new(|_, _| {}),
+            noop_exit(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn close_then_resize_returns_error() {
+        let manager = PtyManager::new();
+        let id = manager
+            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
+            .expect("Failed to spawn PTY");
+
+        manager.close(id).expect("Failed to close PTY");
+
+        let result = manager.resize(id, 120, 40);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn full_lifecycle() {
+        let manager = PtyManager::new();
+        let (output_tx, output_rx) = mpsc::channel();
+        let (exit_tx, exit_rx) = mpsc::channel();
+
+        // Spawn
+        let id = manager
+            .spawn(
+                "/bin/sh",
+                80,
+                24,
+                Box::new(move |_id, data| {
+                    let _ = output_tx.send(data);
+                }),
+                Box::new(move |exit_id| {
+                    let _ = exit_tx.send(exit_id);
+                }),
+            )
+            .expect("Failed to spawn PTY");
+        assert!(id > 0);
+
+        // Write
+        manager
+            .write(id, b"echo LIFECYCLE_TEST\n")
+            .expect("Failed to write");
+
+        // Read output
+        let mut found = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Ok(data) = output_rx.recv_timeout(Duration::from_millis(100)) {
+                if String::from_utf8_lossy(&data).contains("LIFECYCLE_TEST") {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found, "Expected to find 'LIFECYCLE_TEST' in PTY output");
+
+        // Resize
+        manager.resize(id, 120, 40).expect("Failed to resize");
+
+        // Exit
+        manager.write(id, b"exit\n").expect("Failed to write exit");
+
+        // Wait for exit callback
+        let exit_id = exit_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("Exit callback not fired");
+        assert_eq!(exit_id, id);
+    }
 }

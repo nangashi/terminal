@@ -1,5 +1,11 @@
 import { vi } from "vitest";
 
+export const xtermWriteCalls: unknown[] = [];
+
+export function clearXtermWriteCalls() {
+  xtermWriteCalls.length = 0;
+}
+
 export function setupXtermMocks() {
   vi.mock("@xterm/xterm", () => ({
     Terminal: class MockTerminal {
@@ -8,7 +14,9 @@ export function setupXtermMocks() {
       onData = vi.fn();
       onResize = vi.fn();
       dispose = vi.fn();
-      write = vi.fn();
+      write = vi.fn((data: unknown) => {
+        xtermWriteCalls.push(data);
+      });
       unicode = { activeVersion: "6" };
     },
   }));
