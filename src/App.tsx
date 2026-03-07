@@ -119,13 +119,29 @@ function App() {
       spawningTabs.current.add(ts.tab.id);
       log("Spawning PTY for tab", ts.tab.id, ts.tab.title);
 
-      invoke<number>("create_pty", {}).then((ptyId) => {
+      const handle = termRefs.current.get(ts.tab.id);
+      const cols = handle?.terminal?.cols;
+      const rows = handle?.terminal?.rows;
+
+      invoke<number>("create_pty", {
+        ...(cols != null && rows != null ? { cols, rows } : {}),
+      }).then((ptyId) => {
         log("PTY created:", ptyId, "for tab", ts.tab.id);
         spawningTabs.current.delete(ts.tab.id);
         ptyToTab.current.set(ptyId, ts.tab.id);
         setTabStates((prev) =>
           prev.map((s) => (s.tab.id === ts.tab.id ? { ...s, ptyId } : s)),
         );
+
+        // Sync size in case the terminal was resized during async PTY creation
+        const cur = termRefs.current.get(ts.tab.id);
+        const curCols = cur?.terminal?.cols;
+        const curRows = cur?.terminal?.rows;
+        if (curCols != null && curRows != null) {
+          if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
+            invoke("resize_pty", { id: ptyId, cols: curCols, rows: curRows });
+          }
+        }
       });
     }
   }, [tabStates]);

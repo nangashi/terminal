@@ -39,14 +39,18 @@ pub fn create_pty(
     app: AppHandle,
     state: State<'_, PtyManager>,
     shell: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
 ) -> Result<PtyId, String> {
     let shell = shell.unwrap_or_else(default_shell);
+    let cols = cols.unwrap_or(80);
+    let rows = rows.unwrap_or(24);
     let output_handle = app.clone();
     let exit_handle = app;
     state.spawn(
         &shell,
-        80,
-        24,
+        cols,
+        rows,
         Box::new(move |id, data| {
             let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
         }),
