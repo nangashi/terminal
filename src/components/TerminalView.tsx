@@ -1,4 +1,9 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -16,6 +21,13 @@ interface TerminalViewProps {
   onResize?: (cols: number, rows: number) => void;
   onTitleChange?: (title: string) => void;
 }
+
+const TERMINAL_CONTAINER_STYLE: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  overflow: "hidden",
+  padding: "4px 8px",
+};
 
 export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
   function TerminalView({ isActive, onData, onResize, onTitleChange }, ref) {
@@ -111,16 +123,6 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       }
     }, [isActive]);
 
-    return (
-      <div
-        ref={containerRef}
-        style={{
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-          padding: "4px 8px",
-        }}
-      />
-    );
+    return <div ref={containerRef} style={TERMINAL_CONTAINER_STYLE} />;
   },
 );

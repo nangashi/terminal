@@ -42,8 +42,10 @@ function cwdDisplayName(cwd: string): string {
   return parts[parts.length - 1] || cwd;
 }
 
+const HOME_RE = /^\/home\/[^/]+/;
+
 function cwdShortPath(cwd: string): string {
-  const homeMatch = cwd.match(/^\/home\/[^/]+/);
+  const homeMatch = cwd.match(HOME_RE);
   if (homeMatch) {
     return "~" + cwd.slice(homeMatch[0].length);
   }
@@ -96,24 +98,15 @@ function PaneListItem({
               <span className="pane-list-item__claude-status">
                 {claude.status === "working" ? (
                   <>
-                    <span
-                      className="pane-list-item__claude-dot"
-                      style={{ animationDelay: "0s" }}
-                    >
-                      {"\u25CF"}
-                    </span>
-                    <span
-                      className="pane-list-item__claude-dot"
-                      style={{ animationDelay: "0.2s" }}
-                    >
-                      {"\u25CF"}
-                    </span>
-                    <span
-                      className="pane-list-item__claude-dot"
-                      style={{ animationDelay: "0.4s" }}
-                    >
-                      {"\u25CF"}
-                    </span>
+                    {[0, 0.2, 0.4].map((delay, i) => (
+                      <span
+                        key={i}
+                        className="pane-list-item__claude-dot"
+                        style={{ animationDelay: `${delay}s` }}
+                      >
+                        {"\u25CF"}
+                      </span>
+                    ))}
                   </>
                 ) : (
                   <span>{"\u5F85\u6A5F"}</span>

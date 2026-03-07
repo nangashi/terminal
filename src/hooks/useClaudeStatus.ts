@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 export type ClaudeStatus = "working" | "idle";
 
@@ -14,13 +14,11 @@ function parseClaudeStatus(title: string): ClaudeState | null {
 }
 
 export function useClaudeStatus() {
-  const titlesRef = useRef<Map<string, string>>(new Map());
   const [claudeStatus, setClaudeStatus] = useState<Map<string, ClaudeState>>(
     () => new Map(),
   );
 
   const handleTitleChange = useCallback((paneId: string, title: string) => {
-    titlesRef.current.set(paneId, title);
     const parsed = parseClaudeStatus(title);
 
     setClaudeStatus((prev) => {
