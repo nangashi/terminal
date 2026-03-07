@@ -1,0 +1,17 @@
+.pane-divider {
+  z-index: 10;
+  background: var(--color-surface);
+  transition: background 0.15s;
+}
+
+.pane-divider:hover {
+  background: var(--color-blue);
+}
+
+.pane-divider--vertical {
+  cursor: col-resize;
+}
+
+.pane-divider--horizontal {
+  cursor: row-resize;
+}

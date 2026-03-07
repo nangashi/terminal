@@ -14,6 +14,7 @@ export function setupXtermMocks() {
       onData = vi.fn();
       onResize = vi.fn();
       dispose = vi.fn();
+      focus = vi.fn();
       write = vi.fn((data: unknown) => {
         xtermWriteCalls.push(data);
       });

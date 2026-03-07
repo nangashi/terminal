@@ -10,14 +10,17 @@ export interface TerminalHandle {
 }
 
 interface TerminalViewProps {
+  isActive?: boolean;
   onData?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
 }
 
 export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
-  function TerminalView({ onData, onResize }, ref) {
+  function TerminalView({ isActive, onData, onResize }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
+    const isActiveRef = useRef(isActive);
+    isActiveRef.current = isActive;
 
     // Keep callback refs so the xterm event handlers always call the latest version
     const onDataRef = useRef(onData);
@@ -84,6 +87,12 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         terminalRef.current = null;
       };
     }, []);
+
+    useEffect(() => {
+      if (isActive && terminalRef.current) {
+        terminalRef.current.focus();
+      }
+    }, [isActive]);
 
     return (
       <div

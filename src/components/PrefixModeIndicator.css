@@ -1,0 +1,13 @@
+.prefix-mode-indicator {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  background: var(--color-blue);
+  color: var(--color-crust);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  z-index: 1000;
+  pointer-events: none;
+}
