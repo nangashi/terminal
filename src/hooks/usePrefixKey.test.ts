@@ -125,6 +125,22 @@ describe("usePrefixKey", () => {
     expect(result.current.isPrefixMode).toBe(false);
   });
 
+  it("fires toggle-sidebar on prefix + b", () => {
+    renderHook(() => usePrefixKey(onAction));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("b"));
+    expect(actions).toEqual(["toggle-sidebar"]);
+  });
+
+  it("fires select-pane actions with number keys", () => {
+    renderHook(() => usePrefixKey(onAction));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("1"));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("9"));
+    expect(actions).toEqual(["select-pane-1", "select-pane-9"]);
+  });
+
   it("ignores modifier-only keys in prefix mode", () => {
     const { result } = renderHook(() => usePrefixKey(onAction));
     act(() => fireKey("t", { ctrlKey: true }));

@@ -1,5 +1,6 @@
 #![allow(clippy::needless_pass_by_value)] // Tauri commands require by-value params
 
+use crate::git;
 use crate::pty::{PtyId, PtyManager};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -77,4 +78,21 @@ pub fn resize_pty(
 #[tauri::command]
 pub fn close_pty(state: State<'_, PtyManager>, id: PtyId) -> Result<(), String> {
     state.close(id)
+}
+
+#[tauri::command]
+pub fn get_pty_cwd(state: State<'_, PtyManager>, id: PtyId) -> Result<String, String> {
+    let pid = state
+        .get_child_pid(id)?
+        .ok_or_else(|| "PID not available".to_string())?;
+    let link = std::fs::read_link(format!("/proc/{pid}/cwd"))
+        .map_err(|e| format!("Failed to read cwd for PID {pid}: {e}"))?;
+    link.to_str()
+        .map(String::from)
+        .ok_or_else(|| "CWD path is not valid UTF-8".to_string())
+}
+
+#[tauri::command]
+pub fn get_git_info(path: String) -> Option<git::GitInfo> {
+    git::get_info(std::path::Path::new(&path))
 }

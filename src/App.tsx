@@ -1,11 +1,13 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { TerminalHandle } from "./components/TerminalView";
 import { TitleBar } from "./components/TitleBar";
 import { PaneContainer } from "./components/PaneContainer";
 import { PrefixModeIndicator } from "./components/PrefixModeIndicator";
+import { Sidebar, PaneInfo } from "./components/Sidebar";
 import { usePrefixKey, PrefixAction } from "./hooks/usePrefixKey";
+import { usePaneMetadata } from "./hooks/usePaneMetadata";
 import { Tab, PaneNode } from "./types";
 import {
   createLeaf,
@@ -69,6 +71,7 @@ function App() {
     return [createInitialTabState("Terminal 1")];
   });
   const [activeTabId, setActiveTabId] = useState(() => tabStates[0].tab.id);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
   // paneId -> TerminalHandle
   const termRefs = useRef<Map<string, TerminalHandle>>(new Map());
@@ -398,6 +401,31 @@ function App() {
         }
         break;
       }
+      case "toggle-sidebar":
+        setSidebarVisible((v) => !v);
+        break;
+      case "select-pane-1":
+      case "select-pane-2":
+      case "select-pane-3":
+      case "select-pane-4":
+      case "select-pane-5":
+      case "select-pane-6":
+      case "select-pane-7":
+      case "select-pane-8":
+      case "select-pane-9": {
+        const idx = parseInt(action.slice(-1)) - 1;
+        const leaves = allLeaves(currentTab.paneTree);
+        if (idx < leaves.length) {
+          setTabStates((prev) =>
+            prev.map((s) =>
+              s.tab.id === currentTabId
+                ? { ...s, activePaneId: leaves[idx].id }
+                : s,
+            ),
+          );
+        }
+        break;
+      }
       case "cancel":
         break;
     }
@@ -454,6 +482,28 @@ function App() {
 
   const tabs = tabStates.map((s) => s.tab);
 
+  const activeTabState = tabStates.find((s) => s.tab.id === activeTabId);
+  const activeLeaves = useMemo(
+    () => (activeTabState ? allLeaves(activeTabState.paneTree) : []),
+    [activeTabState],
+  );
+  const sidebarPanes: PaneInfo[] = activeTabState
+    ? activeLeaves.map((leaf, i) => ({
+        id: leaf.id,
+        index: i + 1,
+        isActive: leaf.id === activeTabState.activePaneId,
+      }))
+    : [];
+
+  const paneToPtyEntries: [string, number][] = useMemo(
+    () =>
+      activeLeaves
+        .filter((leaf) => leaf.ptyId != null)
+        .map((leaf) => [leaf.id, leaf.ptyId!]),
+    [activeLeaves],
+  );
+  const paneMetadata = usePaneMetadata(paneToPtyEntries);
+
   return (
     <div className="app-root">
       <TitleBar
@@ -464,30 +514,39 @@ function App() {
         onSelectTab={setActiveTabId}
         onReorderTabs={handleReorderTabs}
       />
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        {tabStates.map((ts) => (
-          <div
-            key={ts.tab.id}
-            style={{
-              width: "100%",
-              height: "100%",
-              position: "absolute",
-              top: 0,
-              left: 0,
-              visibility: ts.tab.id === activeTabId ? "visible" : "hidden",
-            }}
-          >
-            <PaneContainer
-              node={ts.paneTree}
-              activePaneId={ts.tab.id === activeTabId ? ts.activePaneId : ""}
-              onData={handlePaneData}
-              onResize={handlePaneResize}
-              onPaneRef={handlePaneRef}
-              onPaneFocus={handlePaneFocus}
-              onDividerDrag={handleDividerDrag}
-            />
-          </div>
-        ))}
+      <div className="app-main">
+        {sidebarVisible && (
+          <Sidebar
+            panes={sidebarPanes}
+            metadata={paneMetadata}
+            onSelectPane={handlePaneFocus}
+          />
+        )}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+          {tabStates.map((ts) => (
+            <div
+              key={ts.tab.id}
+              style={{
+                width: "100%",
+                height: "100%",
+                position: "absolute",
+                top: 0,
+                left: 0,
+                visibility: ts.tab.id === activeTabId ? "visible" : "hidden",
+              }}
+            >
+              <PaneContainer
+                node={ts.paneTree}
+                activePaneId={ts.tab.id === activeTabId ? ts.activePaneId : ""}
+                onData={handlePaneData}
+                onResize={handlePaneResize}
+                onPaneRef={handlePaneRef}
+                onPaneFocus={handlePaneFocus}
+                onDividerDrag={handleDividerDrag}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       <PrefixModeIndicator visible={isPrefixMode} />
     </div>

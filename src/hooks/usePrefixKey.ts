@@ -12,6 +12,16 @@ export type PrefixAction =
   | "resize-up"
   | "resize-right"
   | "close-pane"
+  | "toggle-sidebar"
+  | "select-pane-1"
+  | "select-pane-2"
+  | "select-pane-3"
+  | "select-pane-4"
+  | "select-pane-5"
+  | "select-pane-6"
+  | "select-pane-7"
+  | "select-pane-8"
+  | "select-pane-9"
   | "cancel";
 
 const PREFIX_TIMEOUT_MS = 2000;
@@ -44,6 +54,26 @@ function resolveAction(key: string): PrefixAction {
       return "resize-right";
     case "x":
       return "close-pane";
+    case "b":
+      return "toggle-sidebar";
+    case "1":
+      return "select-pane-1";
+    case "2":
+      return "select-pane-2";
+    case "3":
+      return "select-pane-3";
+    case "4":
+      return "select-pane-4";
+    case "5":
+      return "select-pane-5";
+    case "6":
+      return "select-pane-6";
+    case "7":
+      return "select-pane-7";
+    case "8":
+      return "select-pane-8";
+    case "9":
+      return "select-pane-9";
     default:
       return "cancel";
   }

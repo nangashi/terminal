@@ -165,6 +165,19 @@ impl PtyManager {
             .map_err(|e| format!("Failed to resize PTY: {e}"))
     }
 
+    /// Get the child process PID for a PTY.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the PTY ID is not found or the mutex is poisoned.
+    pub fn get_child_pid(&self, id: PtyId) -> Result<Option<u32>, String> {
+        let instances = self.instances.lock().map_err(|e| e.to_string())?;
+        let instance = instances
+            .get(&id)
+            .ok_or_else(|| format!("PTY {id} not found"))?;
+        Ok(instance.child.process_id())
+    }
+
     /// Close and remove a PTY.
     ///
     /// # Errors
