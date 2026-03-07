@@ -2,10 +2,10 @@
   display: flex;
   align-items: stretch;
   height: 36px;
-  background: #181825;
+  background: var(--color-mantle);
   user-select: none;
   -webkit-user-select: none;
-  border-bottom: 1px solid #11111b;
+  border-bottom: 1px solid var(--color-crust);
 }
 
 /* Drag region + tabs area */
@@ -27,7 +27,7 @@
   width: 200px;
   min-width: 60px;
   flex-shrink: 1;
-  background: #181825;
+  background: var(--color-mantle);
   border-radius: 6px 6px 0 0;
   margin-top: 4px;
   cursor: default;
@@ -35,21 +35,21 @@
 }
 
 .titlebar-tab:hover {
-  background: rgba(205, 214, 244, 0.06);
+  background: var(--color-surface-hover);
 }
 
 .titlebar-tab.active {
-  background: #1e1e2e;
+  background: var(--color-base);
 }
 
 .titlebar-tab.drag-over {
-  box-shadow: inset 2px 0 0 #89b4fa;
+  box-shadow: inset 2px 0 0 var(--color-blue);
 }
 
 .titlebar-tab .tab-label {
   font-family: "HackGen35 Console NF", sans-serif;
   font-size: 12px;
-  color: #6c7086;
+  color: var(--color-subtext);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -58,7 +58,7 @@
 }
 
 .titlebar-tab.active .tab-label {
-  color: #cdd6f4;
+  color: var(--color-text);
 }
 
 /* Tab close button */
@@ -81,12 +81,12 @@
 
 .titlebar-tab:hover .tab-close,
 .titlebar-tab.active .tab-close {
-  color: #6c7086;
+  color: var(--color-subtext);
 }
 
 .tab-close:hover {
-  background: rgba(205, 214, 244, 0.15);
-  color: #cdd6f4 !important;
+  background: var(--color-overlay-strong);
+  color: var(--color-text) !important;
 }
 
 /* New tab button */
@@ -100,13 +100,13 @@
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #6c7086;
+  color: var(--color-subtext);
   cursor: pointer;
 }
 
 .titlebar-new-tab:hover {
-  background: rgba(205, 214, 244, 0.1);
-  color: #cdd6f4;
+  background: var(--color-overlay);
+  color: var(--color-text);
 }
 
 /* Window controls */
@@ -123,17 +123,17 @@
   width: 46px;
   border: none;
   background: transparent;
-  color: #6c7086;
+  color: var(--color-subtext);
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .titlebar-btn:hover {
-  background: rgba(205, 214, 244, 0.1);
-  color: #cdd6f4;
+  background: var(--color-overlay);
+  color: var(--color-text);
 }
 
 .titlebar-btn-close:hover {
-  background: #e64553;
+  background: var(--color-red);
   color: #ffffff;
 }

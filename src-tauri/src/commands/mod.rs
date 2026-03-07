@@ -11,6 +11,12 @@ pub struct PtyOutput {
     pub data: Vec<u8>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyExit {
+    pub id: PtyId,
+}
+
 /// Returns the default shell for the current platform.
 fn default_shell() -> String {
     // On Windows, prefer WSL if available, otherwise cmd.exe
@@ -32,10 +38,19 @@ pub fn create_pty(
     shell: Option<String>,
 ) -> Result<PtyId, String> {
     let shell = shell.unwrap_or_else(default_shell);
-    let app_handle = app.clone();
-    state.spawn(&shell, 80, 24, move |id, data| {
-        let _ = app_handle.emit("pty-output", PtyOutput { id, data });
-    })
+    let output_handle = app.clone();
+    let exit_handle = app;
+    state.spawn(
+        &shell,
+        80,
+        24,
+        Box::new(move |id, data| {
+            let _ = output_handle.emit("pty-output", PtyOutput { id, data });
+        }),
+        Box::new(move |id| {
+            let _ = exit_handle.emit("pty-exit", PtyExit { id });
+        }),
+    )
 }
 
 #[tauri::command]

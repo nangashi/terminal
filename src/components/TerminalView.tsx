@@ -38,6 +38,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       const container = containerRef.current;
       if (!container) return;
 
+      const style = getComputedStyle(document.documentElement);
+      const cssVar = (name: string) => style.getPropertyValue(name).trim();
+
       const terminal = new Terminal({
         allowProposedApi: true,
         fontSize: 14,
@@ -45,9 +48,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
           '"HackGen35 Console NF", "Cascadia Code", "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace',
         cursorBlink: true,
         theme: {
-          background: "#1e1e2e",
-          foreground: "#cdd6f4",
-          cursor: "#f5e0dc",
+          background: cssVar("--color-base"),
+          foreground: cssVar("--color-text"),
+          cursor: cssVar("--color-cursor"),
         },
       });
 

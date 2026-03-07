@@ -1,8 +1,6 @@
-import { useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./TitleBar.css";
-
-const appWindow = getCurrentWindow();
 
 export interface Tab {
   id: string;
@@ -26,6 +24,7 @@ export function TitleBar({
   onSelectTab,
   onReorderTabs,
 }: TitleBarProps) {
+  const appWindow = useMemo(() => getCurrentWindow(), []);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragSourceId = useRef<string | null>(null);
 

@@ -15,41 +15,47 @@ interface PtyOutput {
   data: number[];
 }
 
+interface PtyExit {
+  id: number;
+}
+
 interface TabState {
   tab: Tab;
   ptyId: number | null;
 }
-
-let nextTabNum = 1;
 
 function createTabId(): string {
   return crypto.randomUUID();
 }
 
 function App() {
+  const nextTabNum = useRef(1);
+
   const [tabStates, setTabStates] = useState<TabState[]>(() => {
     const id = createTabId();
-    return [{ tab: { id, title: `Terminal ${nextTabNum++}` }, ptyId: null }];
+    return [
+      { tab: { id, title: `Terminal ${nextTabNum.current++}` }, ptyId: null },
+    ];
   });
   const [activeTabId, setActiveTabId] = useState(() => tabStates[0].tab.id);
 
   const termRefs = useRef<Map<string, TerminalHandle>>(new Map());
   const ptyToTab = useRef<Map<number, string>>(new Map());
   const initedRef = useRef(false);
-  const unlistenRef = useRef<(() => void) | null>(null);
-  // Track in-flight PTY spawns to prevent duplicates
+  const unlistenRefs = useRef<(() => void)[]>([]);
   const spawningTabs = useRef<Set<string>>(new Set());
-  // Ref to always have latest tabStates in callbacks
   const tabStatesRef = useRef(tabStates);
   tabStatesRef.current = tabStates;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
 
-  // Set up global PTY output listener once
+  // Set up global PTY event listeners once
   useEffect(() => {
     if (initedRef.current) return;
     initedRef.current = true;
 
-    async function setupListener() {
-      unlistenRef.current = await listen<PtyOutput>("pty-output", (event) => {
+    async function setupListeners() {
+      const unlistenOutput = await listen<PtyOutput>("pty-output", (event) => {
         const ptyId = event.payload.id;
         const tabId = ptyToTab.current.get(ptyId);
         if (!tabId) return;
@@ -57,13 +63,45 @@ function App() {
         const text = new TextDecoder().decode(bytes);
         termRefs.current.get(tabId)?.write(text);
       });
-      log("PTY output listener registered");
+
+      const unlistenExit = await listen<PtyExit>("pty-exit", (event) => {
+        const ptyId = event.payload.id;
+        const tabId = ptyToTab.current.get(ptyId);
+        if (!tabId) return;
+        log("PTY exited:", ptyId, "tab:", tabId);
+        ptyToTab.current.delete(ptyId);
+        termRefs.current.delete(tabId);
+
+        setTabStates((prev) => {
+          const remaining = prev.filter((s) => s.tab.id !== tabId);
+          if (remaining.length === 0) {
+            import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+              getCurrentWindow().close(),
+            );
+            return prev;
+          }
+          return remaining;
+        });
+
+        // Switch active tab if the exited one was active
+        if (activeTabIdRef.current === tabId) {
+          setTabStates((prev) => {
+            if (prev.length > 0) {
+              setActiveTabId(prev[Math.max(0, prev.length - 1)].tab.id);
+            }
+            return prev;
+          });
+        }
+      });
+
+      unlistenRefs.current = [unlistenOutput, unlistenExit];
+      log("PTY event listeners registered");
     }
 
-    setupListener();
+    setupListeners();
 
     return () => {
-      unlistenRef.current?.();
+      for (const unlisten of unlistenRefs.current) unlisten();
     };
   }, []);
 
@@ -115,7 +153,7 @@ function App() {
 
   const handleNewTab = useCallback(() => {
     const id = createTabId();
-    const tab: Tab = { id, title: `Terminal ${nextTabNum++}` };
+    const tab: Tab = { id, title: `Terminal ${nextTabNum.current++}` };
     log("New tab:", id, tab.title);
     setTabStates((prev) => [...prev, { tab, ptyId: null }]);
     setActiveTabId(id);
@@ -173,15 +211,7 @@ function App() {
   const tabs = tabStates.map((s) => s.tab);
 
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        background: "#1e1e2e",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
+    <div className="app-root">
       <TitleBar
         tabs={tabs}
         activeTabId={activeTabId}

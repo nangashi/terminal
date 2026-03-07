@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -6,9 +6,16 @@ use std::thread;
 
 pub type PtyId = u32;
 
+/// Callback invoked when PTY output is available.
+pub type OutputCallback = Box<dyn Fn(PtyId, Vec<u8>) + Send>;
+/// Callback invoked when the shell process exits.
+pub type ExitCallback = Box<dyn Fn(PtyId) + Send>;
+
 struct PtyInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
+    #[allow(dead_code)]
+    child: Box<dyn Child + Send>,
 }
 
 pub struct PtyManager {
@@ -37,10 +44,14 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the PTY system fails to open a pair or spawn the command.
-    pub fn spawn<F>(&self, shell: &str, cols: u16, rows: u16, on_output: F) -> Result<PtyId, String>
-    where
-        F: Fn(PtyId, Vec<u8>) + Send + 'static,
-    {
+    pub fn spawn(
+        &self,
+        shell: &str,
+        cols: u16,
+        rows: u16,
+        on_output: OutputCallback,
+        on_exit: ExitCallback,
+    ) -> Result<PtyId, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -54,7 +65,8 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(shell);
         cmd.cwd(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
 
-        pair.slave
+        let child = pair
+            .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn command: {e}"))?;
 
@@ -75,20 +87,35 @@ impl PtyManager {
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone reader: {e}"))?;
 
+        let instances = Arc::clone(&self.instances);
+
         // Spawn a thread to read PTY output
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => break,
                     Ok(n) => on_output(id, buf[..n].to_vec()),
+                    Err(e) => {
+                        if e.kind() == std::io::ErrorKind::Interrupted {
+                            continue;
+                        }
+                        eprintln!("PTY {id} read error: {e}");
+                        break;
+                    }
                 }
             }
+            // Clean up instance and notify frontend
+            if let Ok(mut map) = instances.lock() {
+                map.remove(&id);
+            }
+            on_exit(id);
         });
 
         let instance = PtyInstance {
             master: pair.master,
             writer,
+            child,
         };
 
         self.instances
@@ -156,15 +183,25 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
+    fn noop_exit() -> ExitCallback {
+        Box::new(|_| {})
+    }
+
     #[test]
     fn spawn_and_read_output() {
         let manager = PtyManager::new();
         let (tx, rx) = mpsc::channel();
 
         let id = manager
-            .spawn("/bin/sh", 80, 24, move |_id, data| {
-                let _ = tx.send(data);
-            })
+            .spawn(
+                "/bin/sh",
+                80,
+                24,
+                Box::new(move |_id, data| {
+                    let _ = tx.send(data);
+                }),
+                noop_exit(),
+            )
             .expect("Failed to spawn PTY");
 
         assert!(id > 0);
@@ -195,7 +232,7 @@ mod tests {
     fn resize_does_not_error() {
         let manager = PtyManager::new();
         let id = manager
-            .spawn("/bin/sh", 80, 24, |_, _| {})
+            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
             .expect("Failed to spawn PTY");
 
         manager.resize(id, 120, 40).expect("Failed to resize");
@@ -206,12 +243,39 @@ mod tests {
     fn close_removes_pty() {
         let manager = PtyManager::new();
         let id = manager
-            .spawn("/bin/sh", 80, 24, |_, _| {})
+            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
             .expect("Failed to spawn PTY");
 
         manager.close(id).expect("Failed to close PTY");
 
         let result = manager.write(id, b"test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn exit_callback_fires_on_shell_exit() {
+        let manager = PtyManager::new();
+        let (tx, rx) = mpsc::channel();
+
+        let id = manager
+            .spawn(
+                "/bin/sh",
+                80,
+                24,
+                Box::new(|_, _| {}),
+                Box::new(move |exit_id| {
+                    let _ = tx.send(exit_id);
+                }),
+            )
+            .expect("Failed to spawn PTY");
+
+        // Tell the shell to exit
+        manager.write(id, b"exit\n").expect("Failed to write");
+
+        // Wait for exit callback
+        let exit_id = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("Exit callback not fired");
+        assert_eq!(exit_id, id);
     }
 }
