@@ -188,6 +188,7 @@ function App() {
 
         invoke<number>("create_pty", {
           ...(cols != null && rows != null ? { cols, rows } : {}),
+          ...(leaf.initialCwd ? { cwd: leaf.initialCwd } : {}),
         }).then((ptyId) => {
           log("PTY created:", ptyId, "for pane", paneId);
           spawningPanes.current.delete(paneId);
@@ -281,24 +282,38 @@ function App() {
       case "split-vertical": {
         const direction =
           action === "split-horizontal" ? "horizontal" : "vertical";
-        const result = splitPane(
-          currentTab.paneTree,
-          currentTab.activePaneId,
-          direction,
-        );
-        if (result) {
-          setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === currentTabId
-                ? {
-                    ...s,
-                    paneTree: result.tree,
-                    activePaneId: result.newPaneId,
-                  }
-                : s,
-            ),
+        const activePtyId = paneToPty.current.get(currentTab.activePaneId);
+        const cwdPromise =
+          activePtyId != null
+            ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
+                () => undefined,
+              )
+            : Promise.resolve(undefined);
+        cwdPromise.then((cwd) => {
+          const tab = tabStatesRef.current.find(
+            (s) => s.tab.id === currentTabId,
           );
-        }
+          if (!tab) return;
+          const result = splitPane(
+            tab.paneTree,
+            tab.activePaneId,
+            direction,
+            cwd,
+          );
+          if (result) {
+            setTabStates((prev) =>
+              prev.map((s) =>
+                s.tab.id === currentTabId
+                  ? {
+                      ...s,
+                      paneTree: result.tree,
+                      activePaneId: result.newPaneId,
+                    }
+                  : s,
+              ),
+            );
+          }
+        });
         break;
       }
       case "navigate-left":

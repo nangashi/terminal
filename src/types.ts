@@ -9,6 +9,7 @@ export interface PaneLeaf {
   type: "leaf";
   id: string;
   ptyId: number | null;
+  initialCwd?: string;
 }
 
 export interface PaneSplit {

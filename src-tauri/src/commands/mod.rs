@@ -41,6 +41,7 @@ pub fn create_pty(
     state: State<'_, PtyManager>,
     cols: Option<u16>,
     rows: Option<u16>,
+    cwd: Option<String>,
 ) -> Result<PtyId, String> {
     let shell = default_shell();
     let cols = cols.unwrap_or(80);
@@ -51,6 +52,7 @@ pub fn create_pty(
         &shell,
         cols,
         rows,
+        cwd.as_deref(),
         Box::new(move |id, data| {
             let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
         }),

@@ -1,15 +1,16 @@
 import { PaneNode, PaneLeaf, PaneSplit, SplitDirection } from "../types";
 
-export function createLeaf(): PaneLeaf {
-  return { type: "leaf", id: crypto.randomUUID(), ptyId: null };
+export function createLeaf(initialCwd?: string): PaneLeaf {
+  return { type: "leaf", id: crypto.randomUUID(), ptyId: null, initialCwd };
 }
 
 export function splitPane(
   tree: PaneNode,
   targetPaneId: string,
   direction: SplitDirection,
+  initialCwd?: string,
 ): { tree: PaneNode; newPaneId: string } | null {
-  const newLeaf = createLeaf();
+  const newLeaf = createLeaf(initialCwd);
 
   function walk(node: PaneNode): PaneNode | null {
     if (node.type === "leaf") {

@@ -49,6 +49,7 @@ impl PtyManager {
         shell: &str,
         cols: u16,
         rows: u16,
+        cwd: Option<&str>,
         on_output: OutputCallback,
         on_exit: ExitCallback,
     ) -> Result<PtyId, String> {
@@ -63,7 +64,11 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
         let mut cmd = CommandBuilder::new(shell);
-        cmd.cwd(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
+        let dir = match cwd.filter(|s| !s.is_empty()) {
+            Some(d) => d.to_string(),
+            None => std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
+        };
+        cmd.cwd(dir);
 
         let child = pair
             .slave
@@ -217,6 +222,7 @@ mod tests {
                 "/bin/sh",
                 80,
                 24,
+                None,
                 Box::new(move |_id, data| {
                     let _ = tx.send(data);
                 }),
@@ -252,7 +258,7 @@ mod tests {
     fn resize_does_not_error() {
         let manager = PtyManager::new();
         let id = manager
-            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
+            .spawn("/bin/sh", 80, 24, None, Box::new(|_, _| {}), noop_exit())
             .expect("Failed to spawn PTY");
 
         manager.resize(id, 120, 40).expect("Failed to resize");
@@ -263,7 +269,7 @@ mod tests {
     fn close_removes_pty() {
         let manager = PtyManager::new();
         let id = manager
-            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
+            .spawn("/bin/sh", 80, 24, None, Box::new(|_, _| {}), noop_exit())
             .expect("Failed to spawn PTY");
 
         manager.close(id).expect("Failed to close PTY");
@@ -282,6 +288,7 @@ mod tests {
                 "/bin/sh",
                 80,
                 24,
+                None,
                 Box::new(|_, _| {}),
                 Box::new(move |exit_id| {
                     let _ = tx.send(exit_id);
@@ -310,6 +317,7 @@ mod tests {
                 "/bin/sh",
                 80,
                 24,
+                None,
                 Box::new(move |_id, data| {
                     let _ = tx1.send(data);
                 }),
@@ -322,6 +330,7 @@ mod tests {
                 "/bin/sh",
                 80,
                 24,
+                None,
                 Box::new(move |_id, data| {
                     let _ = tx2.send(data);
                 }),
@@ -384,6 +393,7 @@ mod tests {
             "/nonexistent/shell",
             80,
             24,
+            None,
             Box::new(|_, _| {}),
             noop_exit(),
         );
@@ -394,7 +404,7 @@ mod tests {
     fn close_then_resize_returns_error() {
         let manager = PtyManager::new();
         let id = manager
-            .spawn("/bin/sh", 80, 24, Box::new(|_, _| {}), noop_exit())
+            .spawn("/bin/sh", 80, 24, None, Box::new(|_, _| {}), noop_exit())
             .expect("Failed to spawn PTY");
 
         manager.close(id).expect("Failed to close PTY");
@@ -416,6 +426,7 @@ mod tests {
                 "/bin/sh",
                 80,
                 24,
+                None,
                 Box::new(move |_id, data| {
                     let _ = output_tx.send(data);
                 }),
