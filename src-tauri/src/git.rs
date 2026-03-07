@@ -10,42 +10,42 @@ pub struct GitInfo {
     pub is_dirty: bool,
 }
 
+fn git_output(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
+    Command::new("git")
+        .args(args)
+        .current_dir(path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| o.stdout)
+}
+
+fn git_stdout(path: &Path, args: &[&str]) -> Option<String> {
+    let out = git_output(path, args)?;
+    Some(String::from_utf8_lossy(&out).trim().to_string())
+}
+
 /// Retrieve git repository info for the given directory path.
 /// Returns `None` if the path is not inside a git repository.
 #[must_use]
 pub fn get_info(path: &Path) -> Option<GitInfo> {
-    let toplevel = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
+    // Combine both rev-parse queries into a single subprocess
+    let rev_parse = git_stdout(
+        path,
+        &["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"],
+    )?;
+    let mut lines = rev_parse.lines();
 
-    let toplevel_str = String::from_utf8_lossy(&toplevel.stdout);
-    let repo_name = Path::new(toplevel_str.trim())
-        .file_name()
+    let repo_name = lines
+        .next()
+        .and_then(|l| Path::new(l).file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("")
         .to_string();
 
-    let branch = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map_or_else(
-            || "HEAD".to_string(),
-            |o| String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        );
+    let branch = lines.next().unwrap_or("HEAD").to_string();
 
-    let is_dirty = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .is_some_and(|o| !o.stdout.is_empty());
+    let is_dirty = git_output(path, &["status", "--porcelain"]).is_some_and(|o| !o.is_empty());
 
     Some(GitInfo {
         repo_name,
