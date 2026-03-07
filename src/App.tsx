@@ -14,11 +14,14 @@ import {
   allLeaves,
   updateLeafPtyId,
   updateRatio,
+  findSplitNode,
   findAdjacentPane,
   findParentSplit,
 } from "./lib/paneTree";
 import { PTY_OUTPUT_EVENT, PTY_EXIT_EVENT } from "./constants";
 import "./App.css";
+
+const textDecoder = new TextDecoder();
 
 const DEBUG = import.meta.env.DEV;
 function log(...args: unknown[]) {
@@ -40,6 +43,12 @@ interface TabState {
   activePaneId: string;
 }
 
+function closeAppWindow() {
+  import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+    getCurrentWindow().close(),
+  );
+}
+
 function createTabId(): string {
   return crypto.randomUUID();
 }
@@ -54,10 +63,10 @@ function createInitialTabState(title: string): TabState {
 }
 
 function App() {
-  const nextTabNum = useRef(1);
+  const nextTabNum = useRef(2);
 
   const [tabStates, setTabStates] = useState<TabState[]>(() => {
-    return [createInitialTabState(`Terminal ${nextTabNum.current++}`)];
+    return [createInitialTabState("Terminal 1")];
   });
   const [activeTabId, setActiveTabId] = useState(() => tabStates[0].tab.id);
 
@@ -67,13 +76,20 @@ function App() {
   const ptyToPane = useRef<Map<number, { tabId: string; paneId: string }>>(
     new Map(),
   );
+  // paneId -> ptyId (reverse index for O(1) lookup)
+  const paneToPty = useRef<Map<string, number>>(new Map());
   const initedRef = useRef(false);
   const unlistenRefs = useRef<(() => void)[]>([]);
   const spawningPanes = useRef<Set<string>>(new Set());
   const tabStatesRef = useRef(tabStates);
-  tabStatesRef.current = tabStates;
   const activeTabIdRef = useRef(activeTabId);
-  activeTabIdRef.current = activeTabId;
+
+  useEffect(() => {
+    tabStatesRef.current = tabStates;
+  }, [tabStates]);
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
 
   // Set up global PTY event listeners once
   useEffect(() => {
@@ -88,7 +104,7 @@ function App() {
           const mapping = ptyToPane.current.get(ptyId);
           if (!mapping) return;
           const bytes = new Uint8Array(event.payload.data);
-          const text = new TextDecoder().decode(bytes);
+          const text = textDecoder.decode(bytes);
           termRefs.current.get(mapping.paneId)?.write(text);
         },
       );
@@ -99,6 +115,7 @@ function App() {
         if (!mapping) return;
         log("PTY exited:", ptyId, "pane:", mapping.paneId);
         ptyToPane.current.delete(ptyId);
+        paneToPty.current.delete(mapping.paneId);
         termRefs.current.delete(mapping.paneId);
 
         setTabStates((prev) => {
@@ -111,9 +128,7 @@ function App() {
             // Last pane in tab - remove tab
             const remaining = prev.filter((s) => s.tab.id !== mapping.tabId);
             if (remaining.length === 0) {
-              import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-                getCurrentWindow().close(),
-              );
+              closeAppWindow();
               return prev;
             }
 
@@ -174,6 +189,7 @@ function App() {
           log("PTY created:", ptyId, "for pane", paneId);
           spawningPanes.current.delete(paneId);
           ptyToPane.current.set(ptyId, { tabId, paneId });
+          paneToPty.current.set(paneId, ptyId);
           setTabStates((prev) =>
             prev.map((s) =>
               s.tab.id === tabId
@@ -196,24 +212,18 @@ function App() {
   }, [tabStates]);
 
   const handlePaneData = useCallback((paneId: string, data: string) => {
-    for (const [ptyId, mapping] of ptyToPane.current) {
-      if (mapping.paneId === paneId) {
-        log("Input from pane", paneId, "ptyId:", ptyId);
-        invoke("write_pty", { id: ptyId, data });
-        return;
-      }
-    }
+    const ptyId = paneToPty.current.get(paneId);
+    if (ptyId == null) return;
+    log("Input from pane", paneId, "ptyId:", ptyId);
+    invoke("write_pty", { id: ptyId, data });
   }, []);
 
   const handlePaneResize = useCallback(
     (paneId: string, cols: number, rows: number) => {
-      for (const [ptyId, mapping] of ptyToPane.current) {
-        if (mapping.paneId === paneId) {
-          log("Resize pane", paneId, "ptyId:", ptyId, cols, "x", rows);
-          invoke("resize_pty", { id: ptyId, cols, rows });
-          return;
-        }
-      }
+      const ptyId = paneToPty.current.get(paneId);
+      if (ptyId == null) return;
+      log("Resize pane", paneId, "ptyId:", ptyId, cols, "x", rows);
+      invoke("resize_pty", { id: ptyId, cols, rows });
     },
     [],
   );
@@ -244,22 +254,11 @@ function App() {
       setTabStates((prev) =>
         prev.map((s) => {
           if (s.tab.id !== activeTabIdRef.current) return s;
-          if (s.paneTree.type !== "split") return s;
-          // Find the split and update ratio
-          const currentTree = s.paneTree;
-          const findSplit = (
-            node: PaneNode,
-          ): Extract<PaneNode, { type: "split" }> | null => {
-            if (node.type === "leaf") return null;
-            if (node.id === splitNodeId) return node;
-            return findSplit(node.first) ?? findSplit(node.second);
-          };
-          const split = findSplit(currentTree);
+          const split = findSplitNode(s.paneTree, splitNodeId);
           if (!split) return s;
-          const newRatio = split.ratio + delta;
           return {
             ...s,
-            paneTree: updateRatio(s.paneTree, splitNodeId, newRatio),
+            paneTree: updateRatio(s.paneTree, splitNodeId, split.ratio + delta),
           };
         }),
       );
@@ -303,11 +302,13 @@ function App() {
       case "navigate-right":
       case "navigate-up":
       case "navigate-down": {
-        const dir = action.replace("navigate-", "") as
-          | "left"
-          | "right"
-          | "up"
-          | "down";
+        const dirMap = {
+          "navigate-left": "left",
+          "navigate-right": "right",
+          "navigate-up": "up",
+          "navigate-down": "down",
+        } as const;
+        const dir = dirMap[action];
         const target = findAdjacentPane(
           currentTab.paneTree,
           currentTab.activePaneId,
@@ -326,11 +327,13 @@ function App() {
       case "resize-right":
       case "resize-up":
       case "resize-down": {
-        const dir = action.replace("resize-", "") as
-          | "left"
-          | "right"
-          | "up"
-          | "down";
+        const resizeDirMap = {
+          "resize-left": "left",
+          "resize-right": "right",
+          "resize-up": "up",
+          "resize-down": "down",
+        } as const;
+        const dir = resizeDirMap[action];
         const info = findParentSplit(
           currentTab.paneTree,
           currentTab.activePaneId,
@@ -340,14 +343,7 @@ function App() {
           setTabStates((prev) =>
             prev.map((s) => {
               if (s.tab.id !== currentTabId) return s;
-              const findSplit = (
-                node: PaneNode,
-              ): Extract<PaneNode, { type: "split" }> | null => {
-                if (node.type === "leaf") return null;
-                if (node.id === info.splitId) return node;
-                return findSplit(node.first) ?? findSplit(node.second);
-              };
-              const split = findSplit(s.paneTree);
+              const split = findSplitNode(s.paneTree, info.splitId);
               if (!split) return s;
               return {
                 ...s,
@@ -371,6 +367,7 @@ function App() {
         if (activeLeaf?.ptyId != null) {
           invoke("close_pty", { id: activeLeaf.ptyId });
           ptyToPane.current.delete(activeLeaf.ptyId);
+          paneToPty.current.delete(activePaneId);
         }
         termRefs.current.delete(activePaneId);
 
@@ -381,9 +378,7 @@ function App() {
             (s) => s.tab.id !== currentTabId,
           );
           if (remaining.length === 0) {
-            import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-              getCurrentWindow().close(),
-            );
+            closeAppWindow();
             return;
           }
           setTabStates(remaining);
@@ -417,40 +412,38 @@ function App() {
     setActiveTabId(ts.tab.id);
   }, []);
 
-  const handleCloseTab = useCallback(
-    (tabId: string) => {
-      const ts = tabStates.find((s) => s.tab.id === tabId);
-      if (!ts) return;
-      log("Close tab:", tabId);
+  const handleCloseTab = useCallback((tabId: string) => {
+    const ts = tabStatesRef.current.find((s) => s.tab.id === tabId);
+    if (!ts) return;
+    log("Close tab:", tabId);
 
-      // Close all PTYs in this tab
-      for (const leaf of allLeaves(ts.paneTree)) {
-        if (leaf.ptyId != null) {
-          invoke("close_pty", { id: leaf.ptyId });
-          ptyToPane.current.delete(leaf.ptyId);
-        }
-        termRefs.current.delete(leaf.id);
+    // Close all PTYs in this tab
+    for (const leaf of allLeaves(ts.paneTree)) {
+      if (leaf.ptyId != null) {
+        invoke("close_pty", { id: leaf.ptyId });
+        ptyToPane.current.delete(leaf.ptyId);
+        paneToPty.current.delete(leaf.id);
       }
+      termRefs.current.delete(leaf.id);
+    }
 
-      const remaining = tabStates.filter((s) => s.tab.id !== tabId);
+    const remaining = tabStatesRef.current.filter((s) => s.tab.id !== tabId);
 
-      if (remaining.length === 0) {
-        import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-          getCurrentWindow().close(),
-        );
-        return;
-      }
+    if (remaining.length === 0) {
+      closeAppWindow();
+      return;
+    }
 
-      if (activeTabId === tabId) {
-        const closedIdx = tabStates.findIndex((s) => s.tab.id === tabId);
-        const newIdx = Math.min(closedIdx, remaining.length - 1);
-        setActiveTabId(remaining[newIdx].tab.id);
-      }
+    if (activeTabIdRef.current === tabId) {
+      const closedIdx = tabStatesRef.current.findIndex(
+        (s) => s.tab.id === tabId,
+      );
+      const newIdx = Math.min(closedIdx, remaining.length - 1);
+      setActiveTabId(remaining[newIdx].tab.id);
+    }
 
-      setTabStates(remaining);
-    },
-    [tabStates, activeTabId],
-  );
+    setTabStates(remaining);
+  }, []);
 
   const handleReorderTabs = useCallback((reordered: Tab[]) => {
     setTabStates((prev) => {

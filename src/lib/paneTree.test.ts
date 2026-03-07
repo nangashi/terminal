@@ -4,12 +4,12 @@ import {
   splitPane,
   closePane,
   findLeaf,
+  findSplitNode,
   allLeaves,
   updateLeafPtyId,
   updateRatio,
   findAdjacentPane,
   findParentSplit,
-  nextLeaf,
 } from "./paneTree";
 import { PaneNode } from "../types";
 
@@ -234,17 +234,22 @@ describe("paneTree", () => {
     });
   });
 
-  describe("nextLeaf", () => {
-    it("wraps around to first leaf", () => {
+  describe("findSplitNode", () => {
+    it("finds a split node by id", () => {
       const leaf = createLeaf();
       const { tree } = splitPane(leaf, leaf.id, "horizontal")!;
-      const leaves = allLeaves(tree);
-      expect(nextLeaf(tree, leaves[1].id)).toBe(leaves[0].id);
+      const split = tree as Extract<PaneNode, { type: "split" }>;
+      expect(findSplitNode(tree, split.id)).toBe(split);
     });
 
     it("returns null for non-existent id", () => {
       const leaf = createLeaf();
-      expect(nextLeaf(leaf, "nope")).toBeNull();
+      expect(findSplitNode(leaf, "nope")).toBeNull();
+    });
+
+    it("returns null for leaf node", () => {
+      const leaf = createLeaf();
+      expect(findSplitNode(leaf, leaf.id)).toBeNull();
     });
   });
 });

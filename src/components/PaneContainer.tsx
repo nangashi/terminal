@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { PaneNode } from "../types";
 import {
   computeLeafRects,
@@ -48,12 +48,14 @@ export function PaneContainer({
     return () => observer.disconnect();
   }, []);
 
-  const leafRects: LeafRect[] = computeLeafRects(
-    node,
-    undefined,
-    containerSize,
+  const leafRects: LeafRect[] = useMemo(
+    () => computeLeafRects(node, undefined, containerSize),
+    [node, containerSize],
   );
-  const dividerRects: DividerRect[] = computeDividerRects(node);
+  const dividerRects: DividerRect[] = useMemo(
+    () => computeDividerRects(node),
+    [node],
+  );
 
   return (
     <div ref={containerRef} className="pane-container">
@@ -77,7 +79,7 @@ export function PaneContainer({
           direction={dr.direction}
           rect={dr.rect}
           containerSize={containerSize}
-          onDrag={(delta) => onDividerDrag(dr.splitId, delta)}
+          onDividerDrag={onDividerDrag}
         />
       ))}
     </div>

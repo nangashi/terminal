@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { SplitDirection } from "../types";
+import { DIVIDER_SIZE } from "../lib/paneTree";
 import "./PaneDivider.css";
 
 interface PaneDividerProps {
@@ -7,16 +8,15 @@ interface PaneDividerProps {
   direction: SplitDirection;
   rect: { x: number; y: number; w: number; h: number };
   containerSize: { width: number; height: number };
-  onDrag: (delta: number) => void;
+  onDividerDrag: (splitNodeId: string, delta: number) => void;
 }
 
-const DIVIDER_SIZE = 4; // px - must match CSS and paneTree.ts
-
 export function PaneDivider({
+  splitId,
   direction,
   rect,
   containerSize,
-  onDrag,
+  onDividerDrag,
 }: PaneDividerProps) {
   const dragging = useRef(false);
   const startPos = useRef(0);
@@ -34,7 +34,7 @@ export function PaneDivider({
         const current = isVertical ? ev.clientX : ev.clientY;
         const delta = (current - startPos.current) / totalSize;
         startPos.current = current;
-        onDrag(delta);
+        onDividerDrag(splitId, delta);
       };
 
       const handleMouseUp = () => {
@@ -50,7 +50,7 @@ export function PaneDivider({
       document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
       document.body.style.userSelect = "none";
     },
-    [direction, containerSize, onDrag],
+    [direction, containerSize, splitId, onDividerDrag],
   );
 
   const isVertical = direction === "vertical";

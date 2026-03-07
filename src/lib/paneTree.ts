@@ -71,6 +71,18 @@ export function closePane(
   return tree;
 }
 
+export function findSplitNode(
+  tree: PaneNode,
+  splitNodeId: string,
+): PaneSplit | null {
+  if (tree.type === "leaf") return null;
+  if (tree.id === splitNodeId) return tree;
+  return (
+    findSplitNode(tree.first, splitNodeId) ??
+    findSplitNode(tree.second, splitNodeId)
+  );
+}
+
 export function findLeaf(tree: PaneNode, paneId: string): PaneLeaf | undefined {
   if (tree.type === "leaf") {
     return tree.id === paneId ? tree : undefined;
@@ -102,9 +114,11 @@ export function updateRatio(
   splitNodeId: string,
   ratio: number,
 ): PaneNode {
-  const clamped = Math.max(0.1, Math.min(0.9, ratio));
   if (tree.type === "leaf") return tree;
-  if (tree.id === splitNodeId) return { ...tree, ratio: clamped };
+  if (tree.id === splitNodeId) {
+    const clamped = Math.max(0.1, Math.min(0.9, ratio));
+    return { ...tree, ratio: clamped };
+  }
   const first = updateRatio(tree.first, splitNodeId, ratio);
   const second = updateRatio(tree.second, splitNodeId, ratio);
   if (first === tree.first && second === tree.second) return tree;
@@ -129,7 +143,7 @@ export interface DividerRect {
   rect: Rect;
 }
 
-const DIVIDER_SIZE = 4; // px - must match CSS
+export const DIVIDER_SIZE = 4; // px - must match CSS
 
 export function computeLeafRects(
   node: PaneNode,
@@ -304,9 +318,8 @@ export function findParentSplit(
   if (tree.type === "leaf") return null;
 
   const isInFirst = findLeaf(tree.first, paneId) !== undefined;
-  const isInSecond = findLeaf(tree.second, paneId) !== undefined;
 
-  if (!isInFirst && !isInSecond) return null;
+  if (!isInFirst && findLeaf(tree.second, paneId) === undefined) return null;
 
   const matchesDirection =
     (tree.direction === "vertical" &&
@@ -321,11 +334,4 @@ export function findParentSplit(
 
   if (isInFirst) return findParentSplit(tree.first, paneId, direction);
   return findParentSplit(tree.second, paneId, direction);
-}
-
-export function nextLeaf(tree: PaneNode, paneId: string): string | null {
-  const leaves = allLeaves(tree);
-  const idx = leaves.findIndex((l) => l.id === paneId);
-  if (idx === -1) return null;
-  return leaves[(idx + 1) % leaves.length].id;
 }
