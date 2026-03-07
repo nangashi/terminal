@@ -1,0 +1,64 @@
+name: Feature
+description: 新機能の追加・既存機能の変更
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ガイドライン
+        - **受け入れ基準**: 客観的に合否判定できる条件を書く（「適切に〜」「きれいに〜」はNG）
+        - **実装指針**: 具体的なファイルパス・パターン・設計決定を書く（空欄にしない）
+        - **スコープ外**: 「やらないこと」を明示してスコープを守る
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: なぜこの変更が必要か（背景）と、何を実現するか（振る舞い）
+      placeholder: |
+        現在ターミナルにタブ機能がなく、複数セッションを使い分けられない。
+        タブバーを追加し、複数のターミナルセッションを切り替えられるようにする。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ基準
+      description: 検証可能な完了条件をチェックボックス形式で列挙する
+      placeholder: |
+        - [ ] タブバーに「+」ボタンがあり、クリックで新しいタブが追加される
+        - [ ] タブをクリックするとそのセッションに切り替わる
+        - [ ] タブの「×」ボタンでセッションが終了しタブが閉じる
+        - [ ] 最後のタブを閉じるとウィンドウが閉じる
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-guidance
+    attributes:
+      label: 実装指針
+      description: |
+        以下の観点で具体的に記述する:
+        - 参照実装: 準拠すべき既存コードのパス・パターン
+        - 変更・追加箇所: 変更対象のファイル・モジュール
+        - 設計決定: 技術選択・方式の指定
+        - 利用すべき既存コード: 再利用すべきユーティリティ・ヘルパー
+      placeholder: |
+        - 参照実装: src/components/Terminal.tsx の既存ターミナル描画ロジック
+        - 変更箇所: src/components/ にTabBar.tsx を新規作成、App.tsx にタブ状態管理を追加
+        - 設計決定: タブ状態は React の useState で管理（グローバルストアは使わない）
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: スコープ外
+      description: このIssueでやらないことを明示する
+      placeholder: |
+        - タブのドラッグ&ドロップによる並び替え
+        - タブのピン留め機能
+      value: "なし"
+    validations:
+      required: true

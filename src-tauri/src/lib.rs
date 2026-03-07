@@ -1,0 +1,20 @@
+mod commands;
+pub mod pty;
+
+use commands::{close_pty, create_pty, resize_pty, write_pty};
+use pty::PtyManager;
+
+/// # Panics
+///
+/// Panics if the Tauri application fails to initialize.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .manage(PtyManager::new())
+        .invoke_handler(tauri::generate_handler![
+            create_pty, write_pty, resize_pty, close_pty
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

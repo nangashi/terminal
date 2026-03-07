@@ -1,0 +1,59 @@
+#![allow(clippy::needless_pass_by_value)] // Tauri commands require by-value params
+
+use crate::pty::{PtyId, PtyManager};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyOutput {
+    pub id: PtyId,
+    pub data: Vec<u8>,
+}
+
+/// Returns the default shell for the current platform.
+fn default_shell() -> String {
+    // On Windows, prefer WSL if available, otherwise cmd.exe
+    if cfg!(target_os = "windows") {
+        if std::path::Path::new("C:\\Windows\\System32\\wsl.exe").exists() {
+            return "wsl.exe".to_string();
+        }
+        return "cmd.exe".to_string();
+    }
+
+    // On Linux/macOS, use SHELL env or fall back to /bin/sh
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+}
+
+#[tauri::command]
+pub fn create_pty(
+    app: AppHandle,
+    state: State<'_, PtyManager>,
+    shell: Option<String>,
+) -> Result<PtyId, String> {
+    let shell = shell.unwrap_or_else(default_shell);
+    let app_handle = app.clone();
+    state.spawn(&shell, 80, 24, move |id, data| {
+        let _ = app_handle.emit("pty-output", PtyOutput { id, data });
+    })
+}
+
+#[tauri::command]
+pub fn write_pty(state: State<'_, PtyManager>, id: PtyId, data: String) -> Result<(), String> {
+    state.write(id, data.as_bytes())
+}
+
+#[tauri::command]
+pub fn resize_pty(
+    state: State<'_, PtyManager>,
+    id: PtyId,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.resize(id, cols, rows)
+}
+
+#[tauri::command]
+pub fn close_pty(state: State<'_, PtyManager>, id: PtyId) -> Result<(), String> {
+    state.close(id)
+}

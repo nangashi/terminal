@@ -1,0 +1,16 @@
+[tools]
+node = "22"
+rust = "latest"
+"npm:pnpm" = "9"
+
+[tools.just]
+version = "latest"
+
+[tools.lefthook]
+version = "latest"
+
+[tools."cargo:cargo-nextest"]
+version = "latest"
+
+[tools."cargo:cargo-deny"]
+version = "latest"

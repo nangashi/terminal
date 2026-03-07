@@ -1,0 +1,67 @@
+name: Bug
+description: バグの報告・修正
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ガイドライン
+        - **再現手順**: 誰でも再現できる具体的なステップを書く
+        - **受け入れ基準**: 修正後にどう動くべきかを客観的に書く
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: 何が起きていて（現状）、どうあるべきか（期待動作）
+      placeholder: |
+        現状: タブを10個以上開くとタブバーが画面幅を超えてはみ出す。
+        期待: タブバーがスクロール可能になり、全タブにアクセスできる。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順
+      description: バグを再現するための具体的なステップ
+      placeholder: |
+        1. アプリを起動する
+        2. 「+」ボタンを11回クリックしてタブを追加する
+        3. タブバーの右端が画面外に出る
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ基準
+      description: 修正完了の条件をチェックボックス形式で列挙する
+      placeholder: |
+        - [ ] タブが画面幅を超えた場合、タブバーが横スクロール可能になる
+        - [ ] スクロールしても現在のアクティブタブが常に視認できる
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-guidance
+    attributes:
+      label: 実装指針
+      description: |
+        原因の所在や修正方針がわかっている場合に記述する:
+        - 原因箇所: 問題のあるファイル・関数
+        - 修正方針: どう直すか
+      placeholder: |
+        - 原因箇所: src/components/TabBar.tsx の flex コンテナに overflow 制御がない
+        - 修正方針: overflow-x: auto を追加し、アクティブタブへの scrollIntoView を実装
+    validations:
+      required: false
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: スコープ外
+      description: このIssueでやらないことを明示する
+      value: "なし"
+    validations:
+      required: true

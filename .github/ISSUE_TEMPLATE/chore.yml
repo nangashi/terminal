@@ -1,0 +1,56 @@
+name: Chore
+description: リファクタ・CI改善・依存更新など、機能変更を伴わない作業
+labels: ["chore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ガイドライン
+        - **受け入れ基準**: 作業完了を客観的に判定できる条件を書く
+        - **スコープ外**: 機能変更を含む場合は Feature テンプレートを使う
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: なぜこの作業が必要か（背景）と、何を達成するか
+      placeholder: |
+        ESLint の設定が古く、新しいルールが適用されていない。
+        ESLint v9 の flat config に移行し、推奨ルールセットを適用する。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ基準
+      description: 作業完了の条件をチェックボックス形式で列挙する
+      placeholder: |
+        - [ ] eslint.config.mjs が flat config 形式に移行されている
+        - [ ] just lint が全て通る
+        - [ ] CI が green である
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-guidance
+    attributes:
+      label: 実装指針
+      description: |
+        以下の観点で具体的に記述する:
+        - 変更・追加箇所: 変更対象のファイル・設定
+        - 方針: どのように変更するか
+      placeholder: |
+        - 変更箇所: eslint.config.mjs, package.json
+        - 方針: @eslint/js の recommended + typescript-eslint の strict を適用
+    validations:
+      required: false
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: スコープ外
+      description: このIssueでやらないことを明示する
+      value: "なし"
+    validations:
+      required: true
