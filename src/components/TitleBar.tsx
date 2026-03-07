@@ -1,11 +1,7 @@
 import { useMemo, useRef, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Tab } from "../types";
 import "./TitleBar.css";
-
-export interface Tab {
-  id: string;
-  title: string;
-}
 
 interface TitleBarProps {
   tabs: Tab[];

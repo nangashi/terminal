@@ -2,7 +2,9 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { TerminalView, TerminalHandle } from "./components/TerminalView";
-import { TitleBar, Tab } from "./components/TitleBar";
+import { TitleBar } from "./components/TitleBar";
+import { Tab } from "./types";
+import { PTY_OUTPUT_EVENT, PTY_EXIT_EVENT } from "./constants";
 import "./App.css";
 
 const DEBUG = import.meta.env.DEV;
@@ -55,16 +57,19 @@ function App() {
     initedRef.current = true;
 
     async function setupListeners() {
-      const unlistenOutput = await listen<PtyOutput>("pty-output", (event) => {
-        const ptyId = event.payload.id;
-        const tabId = ptyToTab.current.get(ptyId);
-        if (!tabId) return;
-        const bytes = new Uint8Array(event.payload.data);
-        const text = new TextDecoder().decode(bytes);
-        termRefs.current.get(tabId)?.write(text);
-      });
+      const unlistenOutput = await listen<PtyOutput>(
+        PTY_OUTPUT_EVENT,
+        (event) => {
+          const ptyId = event.payload.id;
+          const tabId = ptyToTab.current.get(ptyId);
+          if (!tabId) return;
+          const bytes = new Uint8Array(event.payload.data);
+          const text = new TextDecoder().decode(bytes);
+          termRefs.current.get(tabId)?.write(text);
+        },
+      );
 
-      const unlistenExit = await listen<PtyExit>("pty-exit", (event) => {
+      const unlistenExit = await listen<PtyExit>(PTY_EXIT_EVENT, (event) => {
         const ptyId = event.payload.id;
         const tabId = ptyToTab.current.get(ptyId);
         if (!tabId) return;

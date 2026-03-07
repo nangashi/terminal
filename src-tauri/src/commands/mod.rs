@@ -4,6 +4,9 @@ use crate::pty::{PtyId, PtyManager};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+pub const PTY_OUTPUT_EVENT: &str = "pty-output";
+pub const PTY_EXIT_EVENT: &str = "pty-exit";
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyOutput {
@@ -45,10 +48,10 @@ pub fn create_pty(
         80,
         24,
         Box::new(move |id, data| {
-            let _ = output_handle.emit("pty-output", PtyOutput { id, data });
+            let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
         }),
         Box::new(move |id| {
-            let _ = exit_handle.emit("pty-exit", PtyExit { id });
+            let _ = exit_handle.emit(PTY_EXIT_EVENT, PtyExit { id });
         }),
     )
 }
