@@ -17,7 +17,6 @@ interface SidebarProps {
 export function Sidebar({ panes, metadata, onSelectPane }: SidebarProps) {
   return (
     <div className="sidebar">
-      <div className="sidebar-header">Panes</div>
       {panes.map((pane) => (
         <PaneListItem
           key={pane.id}

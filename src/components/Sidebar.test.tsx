@@ -67,17 +67,6 @@ describe("Sidebar", () => {
     expect(onSelectPane).toHaveBeenCalledWith("pane-2");
   });
 
-  it("renders header", () => {
-    render(
-      <Sidebar
-        panes={makePanes(1)}
-        metadata={emptyMetadata}
-        onSelectPane={() => {}}
-      />,
-    );
-    expect(screen.getByText("Panes")).toBeTruthy();
-  });
-
   it("displays git repo name and branch from metadata", () => {
     const metadata = new Map<string, PaneMetadata>([
       [

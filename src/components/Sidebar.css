@@ -8,14 +8,6 @@
   flex-direction: column;
 }
 
-.sidebar-header {
-  padding: 8px 12px;
-  font-size: 11px;
-  color: var(--color-subtext);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 .pane-list-item {
   display: flex;
   align-items: center;
