@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Tab } from "../types";
 import "./TitleBar.css";
@@ -10,6 +10,7 @@ interface TitleBarProps {
   onCloseTab: (id: string) => void;
   onSelectTab: (id: string) => void;
   onReorderTabs: (tabs: Tab[]) => void;
+  onRenameTab: (id: string, title: string) => void;
 }
 
 export function TitleBar({
@@ -19,10 +20,15 @@ export function TitleBar({
   onCloseTab,
   onSelectTab,
   onReorderTabs,
+  onRenameTab,
 }: TitleBarProps) {
   const appWindow = useMemo(() => getCurrentWindow(), []);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragSourceId = useRef<string | null>(null);
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const editFinishedRef = useRef(false);
 
   const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
     dragSourceId.current = id;
@@ -67,6 +73,47 @@ export function TitleBar({
     dragSourceId.current = null;
   }, []);
 
+  const handleDoubleClick = useCallback((tab: Tab) => {
+    editFinishedRef.current = false;
+    setEditingTabId(tab.id);
+    setEditValue(tab.title);
+  }, []);
+
+  const finishEdit = useCallback(
+    (commit: boolean) => {
+      if (editFinishedRef.current) return;
+      editFinishedRef.current = true;
+      if (commit && editingTabId !== null) {
+        const trimmed = editValue.trim();
+        if (trimmed) {
+          onRenameTab(editingTabId, trimmed);
+        }
+      }
+      setEditingTabId(null);
+    },
+    [editingTabId, editValue, onRenameTab],
+  );
+
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finishEdit(true);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        finishEdit(false);
+      }
+    },
+    [finishEdit],
+  );
+
+  useEffect(() => {
+    if (editingTabId !== null) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingTabId]);
+
   return (
     <div className="titlebar">
       <div className="titlebar-tabs" data-tauri-drag-region>
@@ -81,7 +128,23 @@ export function TitleBar({
             onDrop={(e) => handleDrop(e, tab.id)}
             onDragEnd={handleDragEnd}
           >
-            <span className="tab-label">{tab.title}</span>
+            {editingTabId === tab.id ? (
+              <input
+                ref={editInputRef}
+                className="tab-label-input"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                onBlur={() => finishEdit(true)}
+              />
+            ) : (
+              <span
+                className="tab-label"
+                onDoubleClick={() => handleDoubleClick(tab)}
+              >
+                {tab.title}
+              </span>
+            )}
             <button
               className="tab-close"
               title="Close tab"

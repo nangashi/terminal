@@ -488,6 +488,14 @@ function App() {
     setTabStates(remaining);
   }, []);
 
+  const handleRenameTab = useCallback((tabId: string, title: string) => {
+    setTabStates((prev) =>
+      prev.map((s) =>
+        s.tab.id === tabId ? { ...s, tab: { ...s.tab, title } } : s,
+      ),
+    );
+  }, []);
+
   const handleReorderTabs = useCallback((reordered: Tab[]) => {
     setTabStates((prev) => {
       const byId = new Map(prev.map((s) => [s.tab.id, s]));
@@ -527,6 +535,7 @@ function App() {
         onNewTab={handleNewTab}
         onCloseTab={handleCloseTab}
         onSelectTab={setActiveTabId}
+        onRenameTab={handleRenameTab}
         onReorderTabs={handleReorderTabs}
       />
       <div className="app-main">

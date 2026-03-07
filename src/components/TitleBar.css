@@ -61,6 +61,20 @@
   color: var(--color-text);
 }
 
+.tab-label-input {
+  font-family: "HackGen35 Console NF", sans-serif;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-blue);
+  border-radius: 3px;
+  outline: none;
+  padding: 0 4px;
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+}
+
 /* Tab close button */
 .tab-close {
   display: flex;
