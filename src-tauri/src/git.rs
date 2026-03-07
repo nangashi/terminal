@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::path::Path;
+use std::process::Command;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,28 +14,38 @@ pub struct GitInfo {
 /// Returns `None` if the path is not inside a git repository.
 #[must_use]
 pub fn get_info(path: &Path) -> Option<GitInfo> {
-    let repo = git2::Repository::discover(path).ok()?;
+    let toplevel = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
 
-    let branch = match repo.head() {
-        Ok(head) => head.shorthand().unwrap_or("HEAD").to_string(),
-        Err(_) => "HEAD".to_string(),
-    };
-
-    let repo_name = repo
-        .workdir()
-        .and_then(|p| p.file_name())
+    let toplevel_str = String::from_utf8_lossy(&toplevel.stdout);
+    let repo_name = Path::new(toplevel_str.trim())
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("")
         .to_string();
 
-    let is_dirty = repo
-        .statuses(Some(
-            git2::StatusOptions::new()
-                .include_untracked(true)
-                .recurse_untracked_dirs(false),
-        ))
-        .map(|s| !s.is_empty())
-        .unwrap_or(false);
+    let branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map_or_else(
+            || "HEAD".to_string(),
+            |o| String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        );
+
+    let is_dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some_and(|o| !o.stdout.is_empty());
 
     Some(GitInfo {
         repo_name,
