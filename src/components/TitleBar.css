@@ -18,7 +18,7 @@
   overflow: hidden;
 }
 
-/* Tab */
+/* Tab — opt out of drag region so clicks/double-clicks work on Windows */
 .titlebar-tab {
   display: flex;
   align-items: center;
@@ -32,6 +32,7 @@
   margin-top: 4px;
   cursor: default;
   transition: background 0.1s;
+  app-region: no-drag;
 }
 
 .titlebar-tab:hover {
@@ -103,7 +104,7 @@
   color: var(--color-text) !important;
 }
 
-/* New tab button */
+/* New tab button — opt out of drag region */
 .titlebar-new-tab {
   display: flex;
   align-items: center;
@@ -116,6 +117,7 @@
   background: transparent;
   color: var(--color-subtext);
   cursor: pointer;
+  app-region: no-drag;
 }
 
 .titlebar-new-tab:hover {

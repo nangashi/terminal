@@ -116,7 +116,15 @@ export function TitleBar({
 
   return (
     <div className="titlebar">
-      <div className="titlebar-tabs" data-tauri-drag-region>
+      <div
+        className="titlebar-tabs"
+        data-tauri-drag-region
+        onDoubleClick={(e) => {
+          if (e.target === e.currentTarget) {
+            appWindow.toggleMaximize();
+          }
+        }}
+      >
         {tabs.map((tab) => (
           <div
             key={tab.id}

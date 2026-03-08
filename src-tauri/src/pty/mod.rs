@@ -11,6 +11,14 @@ pub type OutputCallback = Box<dyn Fn(PtyId, Vec<u8>) + Send>;
 /// Callback invoked when the shell process exits.
 pub type ExitCallback = Box<dyn Fn(PtyId) + Send>;
 
+/// Shared CWD storage updated by OSC 7 parsing in the reader thread.
+type SharedCwd = Arc<Mutex<Option<String>>>;
+
+/// Per-PTY CWD storage, keyed by PTY ID.
+/// Separate from `PtyInstance` so the reader thread can update it
+/// without locking the entire instances map.
+type CwdMap = Arc<Mutex<HashMap<PtyId, SharedCwd>>>;
+
 struct PtyInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
@@ -20,6 +28,7 @@ struct PtyInstance {
 
 pub struct PtyManager {
     instances: Arc<Mutex<HashMap<PtyId, PtyInstance>>>,
+    cwd_map: CwdMap,
     next_id: Arc<Mutex<PtyId>>,
 }
 
@@ -29,11 +38,73 @@ impl Default for PtyManager {
     }
 }
 
+/// Extract the path from an OSC 7 sequence in the given byte buffer.
+///
+/// OSC 7 format: `\x1b]7;file://hostname/path\x07` or `\x1b]7;file://hostname/path\x1b\\`
+/// We also accept bare paths: `\x1b]7;/path\x07`
+fn extract_osc7_path(buf: &[u8]) -> Option<String> {
+    // Find the last OSC 7 sequence (most recent CWD report)
+    let needle = b"\x1b]7;";
+    let start = buf
+        .windows(needle.len())
+        .rposition(|w| w == needle)?
+        .checked_add(needle.len())?;
+
+    // Find the terminator: BEL (\x07) or ST (\x1b\\)
+    let rest = buf.get(start..)?;
+    let end = rest
+        .iter()
+        .position(|&b| b == b'\x07')
+        .or_else(|| rest.windows(2).position(|w| w == b"\x1b\\"))?;
+
+    let raw = std::str::from_utf8(rest.get(..end)?).ok()?;
+
+    // Strip file://hostname prefix if present
+    if let Some(after_scheme) = raw.strip_prefix("file://") {
+        // Skip hostname (everything up to and including the first '/')
+        let path_start = after_scheme.find('/')?;
+        let path = percent_decode(after_scheme.get(path_start..)?);
+        if path.is_empty() {
+            None
+        } else {
+            Some(path)
+        }
+    } else if raw.starts_with('/') {
+        Some(percent_decode(raw))
+    } else {
+        None
+    }
+}
+
+/// Decode percent-encoded bytes in a URI path (e.g. `%20` → ` `).
+fn percent_decode(input: &str) -> String {
+    let mut out = Vec::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(val) = u8::from_str_radix(
+                // SAFETY: we just checked i+2 < len
+                &input[i + 1..i + 3],
+                16,
+            ) {
+                out.push(val);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 impl PtyManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
             instances: Arc::new(Mutex::new(HashMap::new())),
+            cwd_map: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(Mutex::new(1)),
         }
     }
@@ -68,7 +139,18 @@ impl PtyManager {
             Some(d) => d.to_string(),
             None => std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
         };
-        cmd.cwd(dir);
+        cmd.cwd(&dir);
+
+        // Inject OSC 7 CWD reporting via environment variable (no PTY echo).
+        // bash evaluates PROMPT_COMMAND before each prompt.
+        // If the user's .bashrc overrides PROMPT_COMMAND, this is lost,
+        // but on Linux /proc fallback still works.
+        if !shell.ends_with("cmd.exe") {
+            cmd.env(
+                "PROMPT_COMMAND",
+                r#"printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"#,
+            );
+        }
 
         let child = pair
             .slave
@@ -100,12 +182,20 @@ impl PtyManager {
             child,
         };
 
+        // Create shared CWD storage for this PTY
+        let cwd_slot: SharedCwd = Arc::new(Mutex::new(None));
+        self.cwd_map
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(id, Arc::clone(&cwd_slot));
+
         self.instances
             .lock()
             .map_err(|e| e.to_string())?
             .insert(id, instance);
 
         let instances = Arc::clone(&self.instances);
+        let cwd_map = Arc::clone(&self.cwd_map);
 
         // Spawn a thread to read PTY output
         thread::spawn(move || {
@@ -113,7 +203,14 @@ impl PtyManager {
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => on_output(id, buf[..n].to_vec()),
+                    Ok(n) => {
+                        if let Some(path) = extract_osc7_path(&buf[..n]) {
+                            if let Ok(mut cwd) = cwd_slot.lock() {
+                                *cwd = Some(path);
+                            }
+                        }
+                        on_output(id, buf[..n].to_vec());
+                    }
                     Err(e) => {
                         if e.kind() == std::io::ErrorKind::Interrupted {
                             continue;
@@ -123,8 +220,11 @@ impl PtyManager {
                     }
                 }
             }
-            // Clean up instance and notify frontend
+            // Clean up instance and CWD entry, then notify frontend
             if let Ok(mut map) = instances.lock() {
+                map.remove(&id);
+            }
+            if let Ok(mut map) = cwd_map.lock() {
                 map.remove(&id);
             }
             on_exit(id);
@@ -183,6 +283,20 @@ impl PtyManager {
         Ok(instance.child.process_id())
     }
 
+    /// Get the CWD reported by OSC 7 for a PTY.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mutex is poisoned.
+    pub fn get_cwd(&self, id: PtyId) -> Result<Option<String>, String> {
+        let map = self.cwd_map.lock().map_err(|e| e.to_string())?;
+        let Some(slot) = map.get(&id) else {
+            return Ok(None);
+        };
+        let cwd = slot.lock().map_err(|e| e.to_string())?;
+        Ok(cwd.clone())
+    }
+
     /// Close and remove a PTY.
     ///
     /// # Errors
@@ -198,6 +312,9 @@ impl PtyManager {
             instance.child.kill().ok();
             instance.child.wait().ok();
         }
+        if let Ok(mut map) = self.cwd_map.lock() {
+            map.remove(&id);
+        }
         Ok(())
     }
 }
@@ -210,6 +327,62 @@ mod tests {
 
     fn noop_exit() -> ExitCallback {
         Box::new(|_| {})
+    }
+
+    // --- OSC 7 parser tests ---
+
+    #[test]
+    fn osc7_with_bel_terminator() {
+        let buf = b"\x1b]7;file://myhost/home/user/project\x07";
+        assert_eq!(
+            extract_osc7_path(buf),
+            Some("/home/user/project".to_string())
+        );
+    }
+
+    #[test]
+    fn osc7_with_st_terminator() {
+        let buf = b"\x1b]7;file://myhost/tmp/test\x1b\\";
+        assert_eq!(extract_osc7_path(buf), Some("/tmp/test".to_string()));
+    }
+
+    #[test]
+    fn osc7_bare_path() {
+        let buf = b"\x1b]7;/home/user\x07";
+        assert_eq!(extract_osc7_path(buf), Some("/home/user".to_string()));
+    }
+
+    #[test]
+    fn osc7_percent_encoded() {
+        let buf = b"\x1b]7;file://host/home/user/my%20project\x07";
+        assert_eq!(
+            extract_osc7_path(buf),
+            Some("/home/user/my project".to_string())
+        );
+    }
+
+    #[test]
+    fn osc7_embedded_in_output() {
+        let buf = b"some output\x1b]7;file://h/home/user\x07more output";
+        assert_eq!(extract_osc7_path(buf), Some("/home/user".to_string()));
+    }
+
+    #[test]
+    fn osc7_uses_last_occurrence() {
+        let buf = b"\x1b]7;file://h/old/path\x07stuff\x1b]7;file://h/new/path\x07";
+        assert_eq!(extract_osc7_path(buf), Some("/new/path".to_string()));
+    }
+
+    #[test]
+    fn osc7_no_sequence_returns_none() {
+        let buf = b"just regular output";
+        assert_eq!(extract_osc7_path(buf), None);
+    }
+
+    #[test]
+    fn osc7_empty_path_returns_none() {
+        let buf = b"\x1b]7;file://host\x07";
+        assert_eq!(extract_osc7_path(buf), None);
     }
 
     #[test]

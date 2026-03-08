@@ -11,13 +11,22 @@ pub struct GitInfo {
 }
 
 fn git_output(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    Command::new("git")
-        .args(args)
-        .current_dir(path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| o.stdout)
+    let output = if cfg!(target_os = "windows") && path.to_str().is_some_and(|p| p.starts_with('/'))
+    {
+        // WSL path — run git via wsl using -C to set the working directory
+        let path_str = path.to_str()?;
+        let mut cmd = Command::new("wsl");
+        cmd.args(["--", "git", "-C", path_str]);
+        cmd.args(args);
+        cmd.output().ok()?
+    } else {
+        Command::new("git")
+            .args(args)
+            .current_dir(path)
+            .output()
+            .ok()?
+    };
+    output.status.success().then_some(output.stdout)
 }
 
 fn git_stdout(path: &Path, args: &[&str]) -> Option<String> {
