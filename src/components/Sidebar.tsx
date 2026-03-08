@@ -77,7 +77,7 @@ function PaneListItem({
     ? git.repoName
     : metadata?.cwd
       ? cwdDisplayName(metadata.cwd)
-      : `Pane ${pane.index}`;
+      : null;
 
   const cwd = metadata?.cwd;
 
@@ -89,7 +89,11 @@ function PaneListItem({
       <span className="pane-list-item__index">{pane.index}</span>
       <div className="pane-list-item__content">
         <div className="pane-list-item__label-row">
-          <span className="pane-list-item__label">{label}</span>
+          {label ? (
+            <span className="pane-list-item__label">{label}</span>
+          ) : (
+            <span className="pane-list-item__label pane-list-item__label--skeleton" />
+          )}
           {claude && (
             <span
               className={`pane-list-item__claude pane-list-item__claude-${claude.status === "working" ? "working" : "idle"}`}

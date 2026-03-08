@@ -25,9 +25,10 @@ describe("Sidebar", () => {
         onSelectPane={() => {}}
       />,
     );
-    expect(screen.getByText("Pane 1")).toBeTruthy();
-    expect(screen.getByText("Pane 2")).toBeTruthy();
-    expect(screen.getByText("Pane 3")).toBeTruthy();
+    const skeletons = document.querySelectorAll(
+      ".pane-list-item__label--skeleton",
+    );
+    expect(skeletons.length).toBe(3);
   });
 
   it("renders index numbers", () => {
@@ -69,7 +70,8 @@ describe("Sidebar", () => {
         onSelectPane={onSelectPane}
       />,
     );
-    fireEvent.click(screen.getByText("Pane 2"));
+    const items = document.querySelectorAll(".pane-list-item");
+    fireEvent.click(items[1]);
     expect(onSelectPane).toHaveBeenCalledWith("pane-2");
   });
 
