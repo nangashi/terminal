@@ -138,7 +138,18 @@ impl PtyManager {
             Some(d) => d.to_string(),
             None => std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
         };
-        cmd.cwd(&dir);
+
+        // On Windows with wsl.exe, use the --cd flag to set the working
+        // directory inside the Linux filesystem.  cmd.cwd() sets the Win32
+        // lpCurrentDirectory which cannot represent Linux paths reported by
+        // OSC 7 (e.g. /home/user/project), so pane-split CWD inheritance
+        // would silently fail.
+        if shell.ends_with("wsl.exe") {
+            cmd.arg("--cd");
+            cmd.arg(&dir);
+        } else {
+            cmd.cwd(&dir);
+        }
 
         // Inject OSC 7 CWD reporting via environment variable (no PTY echo).
         // bash evaluates PROMPT_COMMAND before each prompt.
