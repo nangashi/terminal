@@ -15,6 +15,15 @@
   top: var(--ime-lock-top) !important;
 }
 
+/*
+ * Constrain composition text width so it wraps within the pane
+ * instead of extending beyond the right edge.
+ * CJK characters break naturally; break-all covers non-CJK input.
+ */
+.xterm .composition-view {
+  word-break: break-all;
+}
+
 .xterm .composition-view.ime-composing {
   left: var(--ime-lock-left) !important;
   top: var(--ime-lock-top) !important;

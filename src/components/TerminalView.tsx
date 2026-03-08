@@ -184,12 +184,21 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
           compositionView.style.setProperty("--ime-lock-left", pos.left);
           compositionView.style.setProperty("--ime-lock-top", pos.top);
           compositionView.classList.add("ime-composing");
+
+          // Constrain width so composition text wraps within the pane
+          const parent = compositionView.offsetParent as HTMLElement | null;
+          if (parent) {
+            const leftPx = parseFloat(pos.left) || 0;
+            const maxW = parent.clientWidth - leftPx;
+            compositionView.style.maxWidth = `${Math.max(maxW, 0)}px`;
+          }
         }
       };
 
       const unlockImePosition = () => {
         textarea?.classList.remove("ime-composing");
         compositionView?.classList.remove("ime-composing");
+        compositionView?.style.removeProperty("max-width");
       };
 
       textarea?.addEventListener("keydown", trackImeAnchor);
