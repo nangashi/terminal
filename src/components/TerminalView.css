@@ -1,0 +1,21 @@
+/*
+ * IME composition position lock
+ *
+ * xterm.js repositions the hidden textarea and composition-view on every
+ * render frame via updateCompositionElements(). When terminal output arrives
+ * during IME composition, the cursor moves and the IME candidate window
+ * jumps around. These rules lock the position during active composition.
+ *
+ * !important is needed to override xterm.js inline styles.
+ */
+
+.xterm .xterm-helper-textarea.ime-composing {
+  position: fixed !important;
+  left: var(--ime-lock-left) !important;
+  top: var(--ime-lock-top) !important;
+}
+
+.xterm .composition-view.ime-composing {
+  left: var(--ime-lock-left) !important;
+  top: var(--ime-lock-top) !important;
+}

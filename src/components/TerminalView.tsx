@@ -13,6 +13,7 @@ import {
   readText as clipboardRead,
 } from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
+import "./TerminalView.css";
 
 export interface TerminalHandle {
   write: (data: string) => void;
@@ -122,6 +123,42 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       };
       container.addEventListener("contextmenu", handleContextMenu);
 
+      // Lock IME composition position so it doesn't jump during terminal output
+      const textarea = container.querySelector<HTMLTextAreaElement>(
+        ".xterm-helper-textarea",
+      );
+      const compositionView =
+        container.querySelector<HTMLElement>(".composition-view");
+
+      const lockImePosition = () => {
+        if (textarea) {
+          const rect = textarea.getBoundingClientRect();
+          textarea.style.setProperty("--ime-lock-left", `${rect.left}px`);
+          textarea.style.setProperty("--ime-lock-top", `${rect.top}px`);
+          textarea.classList.add("ime-composing");
+        }
+        if (compositionView) {
+          compositionView.style.setProperty(
+            "--ime-lock-left",
+            compositionView.style.left,
+          );
+          compositionView.style.setProperty(
+            "--ime-lock-top",
+            compositionView.style.top,
+          );
+          compositionView.classList.add("ime-composing");
+        }
+      };
+
+      const unlockImePosition = () => {
+        textarea?.classList.remove("ime-composing");
+        compositionView?.classList.remove("ime-composing");
+      };
+
+      textarea?.addEventListener("compositionstart", lockImePosition);
+      textarea?.addEventListener("compositionend", unlockImePosition);
+      textarea?.addEventListener("blur", unlockImePosition);
+
       const resizeObserver = new ResizeObserver(() => {
         fitAddon.fit();
       });
@@ -130,6 +167,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminalRef.current = terminal;
 
       return () => {
+        textarea?.removeEventListener("compositionstart", lockImePosition);
+        textarea?.removeEventListener("compositionend", unlockImePosition);
+        textarea?.removeEventListener("blur", unlockImePosition);
         container.removeEventListener("contextmenu", handleContextMenu);
         resizeObserver.disconnect();
         terminal.dispose();
