@@ -123,29 +123,60 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       };
       container.addEventListener("contextmenu", handleContextMenu);
 
-      // Lock IME composition position so it doesn't jump during terminal output
+      // Lock IME composition position so it doesn't jump during terminal output.
+      //
+      // xterm.js syncs the hidden textarea to the terminal cursor on every
+      // cursor move (_syncTextArea).  TUI apps like Claude Code move the cursor
+      // around to render UI elements (status bars, etc.), which drags the
+      // textarea along.  If the user starts IME composition at that point the
+      // candidate window appears at the wrong position.
+      //
+      // To mitigate this we record the textarea position on every *non-IME*
+      // keystroke (the last position where the user actually typed) and use
+      // that as the IME lock anchor when composition starts.
       const textarea = container.querySelector<HTMLTextAreaElement>(
         ".xterm-helper-textarea",
       );
       const compositionView =
         container.querySelector<HTMLElement>(".composition-view");
 
+      // Viewport-relative coords (for textarea with position: fixed)
+      let imeAnchorViewport: { left: number; top: number } | null = null;
+      // Container-relative coords (for compositionView with position: absolute)
+      let imeAnchorLocal: { left: string; top: string } | null = null;
+
+      const trackImeAnchor = (e: KeyboardEvent) => {
+        // keyCode 229 = IME composition character; skip to avoid capturing
+        // the cursor position that TUI rendering may have moved to.
+        if (e.keyCode !== 229 && textarea) {
+          const rect = textarea.getBoundingClientRect();
+          imeAnchorViewport = { left: rect.left, top: rect.top };
+          imeAnchorLocal = {
+            left: textarea.style.left,
+            top: textarea.style.top,
+          };
+        }
+      };
+
       const lockImePosition = () => {
         if (textarea) {
-          const rect = textarea.getBoundingClientRect();
-          textarea.style.setProperty("--ime-lock-left", `${rect.left}px`);
-          textarea.style.setProperty("--ime-lock-top", `${rect.top}px`);
+          const pos =
+            imeAnchorViewport ??
+            (() => {
+              const r = textarea.getBoundingClientRect();
+              return { left: r.left, top: r.top };
+            })();
+          textarea.style.setProperty("--ime-lock-left", `${pos.left}px`);
+          textarea.style.setProperty("--ime-lock-top", `${pos.top}px`);
           textarea.classList.add("ime-composing");
         }
         if (compositionView) {
-          compositionView.style.setProperty(
-            "--ime-lock-left",
-            compositionView.style.left,
-          );
-          compositionView.style.setProperty(
-            "--ime-lock-top",
-            compositionView.style.top,
-          );
+          const pos = imeAnchorLocal ?? {
+            left: compositionView.style.left,
+            top: compositionView.style.top,
+          };
+          compositionView.style.setProperty("--ime-lock-left", pos.left);
+          compositionView.style.setProperty("--ime-lock-top", pos.top);
           compositionView.classList.add("ime-composing");
         }
       };
@@ -155,6 +186,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         compositionView?.classList.remove("ime-composing");
       };
 
+      textarea?.addEventListener("keydown", trackImeAnchor);
       textarea?.addEventListener("compositionstart", lockImePosition);
       textarea?.addEventListener("compositionend", unlockImePosition);
       textarea?.addEventListener("blur", unlockImePosition);
@@ -167,6 +199,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminalRef.current = terminal;
 
       return () => {
+        textarea?.removeEventListener("keydown", trackImeAnchor);
         textarea?.removeEventListener("compositionstart", lockImePosition);
         textarea?.removeEventListener("compositionend", unlockImePosition);
         textarea?.removeEventListener("blur", unlockImePosition);
