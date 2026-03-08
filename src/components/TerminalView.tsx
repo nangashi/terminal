@@ -8,6 +8,10 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
+import {
+  writeText as clipboardWrite,
+  readText as clipboardRead,
+} from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
 
 export interface TerminalHandle {
@@ -103,6 +107,21 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         onTitleChangeRef.current?.(title);
       });
 
+      // Right-click: copy selection or paste (Windows Terminal behavior)
+      const handleContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        const selection = terminal.getSelection();
+        if (selection) {
+          clipboardWrite(selection);
+          terminal.clearSelection();
+        } else {
+          clipboardRead().then((text) => {
+            onDataRef.current?.(text);
+          });
+        }
+      };
+      container.addEventListener("contextmenu", handleContextMenu);
+
       const resizeObserver = new ResizeObserver(() => {
         fitAddon.fit();
       });
@@ -111,6 +130,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminalRef.current = terminal;
 
       return () => {
+        container.removeEventListener("contextmenu", handleContextMenu);
         resizeObserver.disconnect();
         terminal.dispose();
         terminalRef.current = null;
