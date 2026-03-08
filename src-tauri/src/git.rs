@@ -67,6 +67,8 @@ pub fn get_info(path: &Path) -> Option<GitInfo> {
 mod tests {
     use super::*;
     use std::env;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn detects_current_repo() {
@@ -83,5 +85,74 @@ mod tests {
     fn returns_none_for_non_repo() {
         let info = get_info(Path::new("/tmp"));
         assert!(info.is_none());
+    }
+
+    fn create_temp_git_repo(name: &str) -> std::path::PathBuf {
+        // Use target/tmp/ within the project so tests work under restrictive sandboxes
+        let mut base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        base.push("target");
+        base.push("tmp");
+        let dir = base.join(format!("terminal-test-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("Failed to create temp dir");
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&dir)
+            .output()
+            .expect("git init failed");
+        dir
+    }
+
+    fn git_commit(dir: &Path, msg: &str) {
+        Command::new("git")
+            .args([
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                msg,
+            ])
+            .current_dir(dir)
+            .output()
+            .expect("git commit failed");
+    }
+
+    #[test]
+    fn detects_dirty_state() {
+        let dir = create_temp_git_repo("dirty");
+        git_commit(&dir, "initial");
+        fs::write(dir.join("dirty.txt"), "change").expect("Failed to write file");
+
+        let info = get_info(&dir).expect("Should detect git repo");
+        assert!(info.is_dirty, "Repo with untracked file should be dirty");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detects_clean_state() {
+        let dir = create_temp_git_repo("clean");
+        git_commit(&dir, "initial");
+
+        let info = get_info(&dir).expect("Should detect git repo");
+        assert!(!info.is_dirty, "Repo with no changes should be clean");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detects_branch_after_commit() {
+        let dir = create_temp_git_repo("branch");
+        git_commit(&dir, "initial");
+
+        let info = get_info(&dir).expect("Should detect git repo");
+        // After a commit, branch should be a real name (main/master), not "HEAD"
+        assert_ne!(info.branch, "HEAD", "Branch should not be detached HEAD");
+        assert!(!info.branch.is_empty(), "Branch name should not be empty");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: check
+          cache-on-failure: true
+      - uses: taiki-e/install-action@cargo-nextest
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: "node npm:pnpm"
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+      - name: Install npm dependencies
+        run: pnpm install
+      - name: Rust fmt
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+      - name: Rust clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+      - name: TypeScript
+        run: pnpm tsc --noEmit
+      - name: ESLint
+        run: pnpm eslint .
+      - name: Prettier
+        run: pnpm prettier --check "src/**/*.{ts,tsx}"
+      - name: Rust tests
+        run: cd src-tauri && cargo nextest run --workspace
+      - name: Frontend tests
+        run: pnpm vitest run

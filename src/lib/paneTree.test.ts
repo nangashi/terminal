@@ -10,6 +10,9 @@ import {
   updateRatio,
   findAdjacentPane,
   findParentSplit,
+  computeLeafRects,
+  computeDividerRects,
+  DIVIDER_SIZE,
 } from "./paneTree";
 import { PaneNode } from "../types";
 
@@ -231,6 +234,63 @@ describe("paneTree", () => {
       const { tree } = splitPane(leaf, leaf.id, "vertical")!;
       const leaves = allLeaves(tree);
       expect(findParentSplit(tree, leaves[0].id, "up")).toBeNull();
+    });
+  });
+
+  describe("computeLeafRects", () => {
+    it("returns a single rect for a leaf", () => {
+      const leaf = createLeaf();
+      const rects = computeLeafRects(leaf);
+      expect(rects).toHaveLength(1);
+      expect(rects[0].paneId).toBe(leaf.id);
+      expect(rects[0].rect).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    });
+
+    it("splits area for a vertical split without container size", () => {
+      const leaf = createLeaf();
+      const { tree } = splitPane(leaf, leaf.id, "vertical")!;
+      const rects = computeLeafRects(tree);
+      expect(rects).toHaveLength(2);
+      // Without containerSize, divider width is 0, so each pane gets ratio * total
+      expect(rects[0].rect.w).toBeCloseTo(0.5);
+      expect(rects[1].rect.w).toBeCloseTo(0.5);
+      expect(rects[1].rect.x).toBeCloseTo(0.5);
+    });
+
+    it("subtracts divider size when container size is provided", () => {
+      const leaf = createLeaf();
+      const { tree } = splitPane(leaf, leaf.id, "vertical")!;
+      const containerSize = { width: 1000, height: 500 };
+      const rects = computeLeafRects(tree, undefined, containerSize);
+      const dividerFraction = DIVIDER_SIZE / containerSize.width;
+      const usable = 1 - dividerFraction;
+      expect(rects[0].rect.w).toBeCloseTo(usable * 0.5);
+      expect(rects[1].rect.x).toBeCloseTo(usable * 0.5 + dividerFraction);
+    });
+  });
+
+  describe("computeDividerRects", () => {
+    it("returns empty for a leaf", () => {
+      const leaf = createLeaf();
+      expect(computeDividerRects(leaf)).toEqual([]);
+    });
+
+    it("returns one divider for a split", () => {
+      const leaf = createLeaf();
+      const { tree } = splitPane(leaf, leaf.id, "horizontal")!;
+      const dividers = computeDividerRects(tree);
+      expect(dividers).toHaveLength(1);
+      expect(dividers[0].direction).toBe("horizontal");
+      expect(dividers[0].rect.y).toBeCloseTo(0.5);
+    });
+
+    it("returns multiple dividers for nested splits", () => {
+      const leaf = createLeaf();
+      let { tree } = splitPane(leaf, leaf.id, "vertical")!;
+      const leaves = allLeaves(tree);
+      tree = splitPane(tree, leaves[1].id, "horizontal")!.tree;
+      const dividers = computeDividerRects(tree);
+      expect(dividers).toHaveLength(2);
     });
   });
 
