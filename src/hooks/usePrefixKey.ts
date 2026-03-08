@@ -13,6 +13,9 @@ export type PrefixAction =
   | "resize-right"
   | "close-pane"
   | "toggle-sidebar"
+  | "create-window"
+  | "next-window"
+  | "prev-window"
   | "select-pane-1"
   | "select-pane-2"
   | "select-pane-3"
@@ -56,6 +59,12 @@ function resolveAction(key: string): PrefixAction {
       return "close-pane";
     case "b":
       return "toggle-sidebar";
+    case "c":
+      return "create-window";
+    case "n":
+      return "next-window";
+    case "p":
+      return "prev-window";
     case "1":
       return "select-pane-1";
     case "2":

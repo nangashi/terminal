@@ -94,4 +94,15 @@ describe("TitleBar", () => {
     await user.type(input, "Changed{Escape}");
     expect(props.onRenameTab).not.toHaveBeenCalled();
   });
+
+  it("shows window indicator when provided", () => {
+    const indicators = new Map([["tab-0", "[2/3]"]]);
+    renderTitleBar({ windowIndicators: indicators });
+    expect(screen.getByText("[2/3]")).toBeInTheDocument();
+  });
+
+  it("does not show window indicator when not provided", () => {
+    renderTitleBar();
+    expect(document.querySelector(".tab-window-indicator")).toBeNull();
+  });
 });

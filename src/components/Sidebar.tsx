@@ -7,10 +7,18 @@ export interface PaneInfo {
   id: string;
   index: number;
   isActive: boolean;
+  windowId: string;
+}
+
+export interface WindowInfo {
+  id: string;
+  title: string;
+  isActive: boolean;
 }
 
 interface SidebarProps {
   panes: PaneInfo[];
+  windows: WindowInfo[];
   metadata: Map<string, PaneMetadata>;
   claudeStatus: Map<string, ClaudeState>;
   onSelectPane: (paneId: string) => void;
@@ -18,21 +26,46 @@ interface SidebarProps {
 
 export function Sidebar({
   panes,
+  windows,
   metadata,
   claudeStatus,
   onSelectPane,
 }: SidebarProps) {
+  const showWindowHeaders = windows.length >= 2;
+
   return (
     <div className="sidebar">
-      {panes.map((pane) => (
-        <PaneListItem
-          key={pane.id}
-          pane={pane}
-          metadata={metadata.get(pane.id)}
-          claude={claudeStatus.get(pane.id)}
-          onSelectPane={onSelectPane}
-        />
-      ))}
+      {showWindowHeaders
+        ? windows.map((win) => {
+            const windowPanes = panes.filter((p) => p.windowId === win.id);
+            return (
+              <div key={win.id}>
+                <div
+                  className={`sidebar-window-header${win.isActive ? " sidebar-window-header--active" : ""}`}
+                >
+                  {win.title}
+                </div>
+                {windowPanes.map((pane) => (
+                  <PaneListItem
+                    key={pane.id}
+                    pane={pane}
+                    metadata={metadata.get(pane.id)}
+                    claude={claudeStatus.get(pane.id)}
+                    onSelectPane={onSelectPane}
+                  />
+                ))}
+              </div>
+            );
+          })
+        : panes.map((pane) => (
+            <PaneListItem
+              key={pane.id}
+              pane={pane}
+              metadata={metadata.get(pane.id)}
+              claude={claudeStatus.get(pane.id)}
+              onSelectPane={onSelectPane}
+            />
+          ))}
     </div>
   );
 }

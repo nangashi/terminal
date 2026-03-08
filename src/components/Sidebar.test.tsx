@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Sidebar, PaneInfo } from "./Sidebar";
+import { Sidebar, PaneInfo, WindowInfo } from "./Sidebar";
 import { PaneMetadata } from "../hooks/usePaneMetadata";
 import { ClaudeState } from "../hooks/useClaudeStatus";
 
@@ -12,6 +12,15 @@ function makePanes(count: number, activeIndex = 0): PaneInfo[] {
     id: `pane-${i + 1}`,
     index: i + 1,
     isActive: i === activeIndex,
+    windowId: "win-1",
+  }));
+}
+
+function makeWindows(count: number, activeIndex = 0): WindowInfo[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `win-${i + 1}`,
+    title: `Window ${i + 1}`,
+    isActive: i === activeIndex,
   }));
 }
 
@@ -20,6 +29,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(3)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -35,6 +45,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(3)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -49,6 +60,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(3, 1)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -65,6 +77,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(3)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={onSelectPane}
@@ -88,6 +101,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -104,6 +118,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -125,6 +140,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -150,6 +166,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -172,6 +189,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -193,6 +211,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={metadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -205,6 +224,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={emptyClaudeStatus}
         onSelectPane={() => {}}
@@ -220,6 +240,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={claudeStatus}
         onSelectPane={() => {}}
@@ -239,6 +260,7 @@ describe("Sidebar", () => {
     render(
       <Sidebar
         panes={makePanes(1)}
+        windows={makeWindows(1)}
         metadata={emptyMetadata}
         claudeStatus={claudeStatus}
         onSelectPane={() => {}}
@@ -248,5 +270,63 @@ describe("Sidebar", () => {
     expect(indicator).toBeTruthy();
     expect(screen.getByText("\u5F85\u6A5F")).toBeTruthy();
     expect(screen.getByText("\uD83E\uDD16")).toBeTruthy();
+  });
+
+  it("does not show window headers with single window", () => {
+    render(
+      <Sidebar
+        panes={makePanes(2)}
+        windows={makeWindows(1)}
+        metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    expect(document.querySelector(".sidebar-window-header")).toBeNull();
+  });
+
+  it("shows window headers with multiple windows", () => {
+    const panes: PaneInfo[] = [
+      { id: "pane-1", index: 1, isActive: true, windowId: "win-1" },
+      { id: "pane-2", index: 2, isActive: false, windowId: "win-2" },
+    ];
+    const windows = makeWindows(2);
+    render(
+      <Sidebar
+        panes={panes}
+        windows={windows}
+        metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    const headers = document.querySelectorAll(".sidebar-window-header");
+    expect(headers.length).toBe(2);
+    expect(headers[0].textContent).toBe("Window 1");
+    expect(headers[1].textContent).toBe("Window 2");
+  });
+
+  it("highlights active window header", () => {
+    const panes: PaneInfo[] = [
+      { id: "pane-1", index: 1, isActive: true, windowId: "win-1" },
+      { id: "pane-2", index: 2, isActive: false, windowId: "win-2" },
+    ];
+    const windows = makeWindows(2, 0);
+    render(
+      <Sidebar
+        panes={panes}
+        windows={windows}
+        metadata={emptyMetadata}
+        claudeStatus={emptyClaudeStatus}
+        onSelectPane={() => {}}
+      />,
+    );
+    const headers = document.querySelectorAll(".sidebar-window-header");
+    expect(headers[0].classList.contains("sidebar-window-header--active")).toBe(
+      true,
+    );
+    expect(headers[1].classList.contains("sidebar-window-header--active")).toBe(
+      false,
+    );
   });
 });

@@ -8,6 +8,17 @@
   flex-direction: column;
 }
 
+.sidebar-window-header {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  color: var(--color-subtext);
+  letter-spacing: 0.05em;
+}
+
+.sidebar-window-header--active {
+  color: var(--color-blue);
+}
+
 .pane-list-item {
   display: flex;
   align-items: center;
@@ -130,7 +141,8 @@
 }
 
 @keyframes claude-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.3;
   }
   50% {

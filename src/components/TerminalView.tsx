@@ -17,6 +17,7 @@ import "./TerminalView.css";
 
 export interface TerminalHandle {
   write: (data: string) => void;
+  fit: () => void;
   terminal: Terminal | null;
 }
 
@@ -38,6 +39,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
   function TerminalView({ isActive, onData, onResize, onTitleChange }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
 
@@ -52,6 +54,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
     useImperativeHandle(ref, () => ({
       write: (data: string) => {
         terminalRef.current?.write(data);
+      },
+      fit: () => {
+        fitAddonRef.current?.fit();
       },
       get terminal() {
         return terminalRef.current;
@@ -83,6 +88,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminal.unicode.activeVersion = "11";
 
       const fitAddon = new FitAddon();
+      fitAddonRef.current = fitAddon;
       terminal.loadAddon(fitAddon);
       terminal.open(container);
 
@@ -207,6 +213,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         resizeObserver.disconnect();
         terminal.dispose();
         terminalRef.current = null;
+        fitAddonRef.current = null;
       };
     }, []);
 

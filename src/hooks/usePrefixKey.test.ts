@@ -141,6 +141,27 @@ describe("usePrefixKey", () => {
     expect(actions).toEqual(["select-pane-1", "select-pane-9"]);
   });
 
+  it("fires create-window on prefix + c", () => {
+    renderHook(() => usePrefixKey(onAction));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("c"));
+    expect(actions).toEqual(["create-window"]);
+  });
+
+  it("fires next-window on prefix + n", () => {
+    renderHook(() => usePrefixKey(onAction));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("n"));
+    expect(actions).toEqual(["next-window"]);
+  });
+
+  it("fires prev-window on prefix + p", () => {
+    renderHook(() => usePrefixKey(onAction));
+    act(() => fireKey("t", { ctrlKey: true }));
+    act(() => fireKey("p"));
+    expect(actions).toEqual(["prev-window"]);
+  });
+
   it("ignores modifier-only keys in prefix mode", () => {
     const { result } = renderHook(() => usePrefixKey(onAction));
     act(() => fireKey("t", { ctrlKey: true }));

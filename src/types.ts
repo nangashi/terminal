@@ -3,6 +3,11 @@ export interface Tab {
   title: string;
 }
 
+export interface Window {
+  id: string;
+  title: string;
+}
+
 export type SplitDirection = "horizontal" | "vertical";
 
 export interface PaneLeaf {

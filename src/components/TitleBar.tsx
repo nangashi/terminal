@@ -6,6 +6,7 @@ import "./TitleBar.css";
 interface TitleBarProps {
   tabs: Tab[];
   activeTabId: string;
+  windowIndicators?: Map<string, string>;
   onNewTab: () => void;
   onCloseTab: (id: string) => void;
   onSelectTab: (id: string) => void;
@@ -16,6 +17,7 @@ interface TitleBarProps {
 export function TitleBar({
   tabs,
   activeTabId,
+  windowIndicators,
   onNewTab,
   onCloseTab,
   onSelectTab,
@@ -151,6 +153,12 @@ export function TitleBar({
                 onDoubleClick={() => handleDoubleClick(tab)}
               >
                 {tab.title}
+                {windowIndicators?.get(tab.id) && (
+                  <span className="tab-window-indicator">
+                    {" "}
+                    {windowIndicators.get(tab.id)}
+                  </span>
+                )}
               </span>
             )}
             <button

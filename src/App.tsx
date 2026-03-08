@@ -9,9 +9,8 @@ import { Sidebar, PaneInfo } from "./components/Sidebar";
 import { usePrefixKey, PrefixAction } from "./hooks/usePrefixKey";
 import { usePaneMetadata } from "./hooks/usePaneMetadata";
 import { useClaudeStatus } from "./hooks/useClaudeStatus";
-import { Tab, PaneNode } from "./types";
+import { Tab } from "./types";
 import {
-  createLeaf,
   splitPane,
   closePane,
   allLeaves,
@@ -21,6 +20,12 @@ import {
   findAdjacentPane,
   findParentSplit,
 } from "./lib/paneTree";
+import {
+  createWindowState,
+  allLeavesInTab,
+  findWindowContainingPane,
+  WindowState,
+} from "./lib/windowHelpers";
 import { PTY_OUTPUT_EVENT, PTY_EXIT_EVENT } from "./constants";
 import "./App.css";
 
@@ -42,8 +47,9 @@ interface PtyExit {
 
 interface TabState {
   tab: Tab;
-  paneTree: PaneNode;
-  activePaneId: string;
+  windows: WindowState[];
+  activeWindowId: string;
+  nextWindowNum: number;
 }
 
 function closeAppWindow() {
@@ -57,11 +63,31 @@ function createTabId(): string {
 }
 
 function createInitialTabState(title: string): TabState {
-  const leaf = createLeaf();
+  const ws = createWindowState("Window 1");
   return {
     tab: { id: createTabId(), title },
-    paneTree: leaf,
-    activePaneId: leaf.id,
+    windows: [ws],
+    activeWindowId: ws.window.id,
+    nextWindowNum: 2,
+  };
+}
+
+function getActiveWindow(tabState: TabState): WindowState | undefined {
+  return tabState.windows.find(
+    (ws) => ws.window.id === tabState.activeWindowId,
+  );
+}
+
+function updateWindow(
+  tabState: TabState,
+  windowId: string,
+  updater: (ws: WindowState) => WindowState,
+): TabState {
+  return {
+    ...tabState,
+    windows: tabState.windows.map((ws) =>
+      ws.window.id === windowId ? updater(ws) : ws,
+    ),
   };
 }
 
@@ -77,10 +103,10 @@ function App() {
 
   // paneId -> TerminalHandle
   const termRefs = useRef<Map<string, TerminalHandle>>(new Map());
-  // ptyId -> { tabId, paneId }
-  const ptyToPane = useRef<Map<number, { tabId: string; paneId: string }>>(
-    new Map(),
-  );
+  // ptyId -> { tabId, windowId, paneId }
+  const ptyToPane = useRef<
+    Map<number, { tabId: string; windowId: string; paneId: string }>
+  >(new Map());
   // paneId -> ptyId (reverse index for O(1) lookup)
   const paneToPty = useRef<Map<string, number>>(new Map());
   const initedRef = useRef(false);
@@ -128,35 +154,65 @@ function App() {
           const tabState = prev.find((s) => s.tab.id === mapping.tabId);
           if (!tabState) return prev;
 
-          const newTree = closePane(tabState.paneTree, mapping.paneId);
+          const win = tabState.windows.find(
+            (ws) => ws.window.id === mapping.windowId,
+          );
+          if (!win) return prev;
+
+          const newTree = closePane(win.paneTree, mapping.paneId);
 
           if (newTree === null) {
-            // Last pane in tab - remove tab
-            const remaining = prev.filter((s) => s.tab.id !== mapping.tabId);
-            if (remaining.length === 0) {
-              closeAppWindow();
-              return prev;
+            // Last pane in window - remove window
+            const remainingWindows = tabState.windows.filter(
+              (ws) => ws.window.id !== mapping.windowId,
+            );
+
+            if (remainingWindows.length === 0) {
+              // Last window in tab - remove tab
+              const remaining = prev.filter((s) => s.tab.id !== mapping.tabId);
+              if (remaining.length === 0) {
+                closeAppWindow();
+                return prev;
+              }
+
+              if (activeTabIdRef.current === mapping.tabId) {
+                const newActiveIdx = Math.max(0, remaining.length - 1);
+                setActiveTabId(remaining[newActiveIdx].tab.id);
+              }
+              return remaining;
             }
 
-            // Switch active tab if needed
-            if (activeTabIdRef.current === mapping.tabId) {
-              const newActiveIdx = Math.max(0, remaining.length - 1);
-              setActiveTabId(remaining[newActiveIdx].tab.id);
-            }
-            return remaining;
+            // Window removed but tab survives
+            const newActiveWindowId =
+              tabState.activeWindowId === mapping.windowId
+                ? remainingWindows[Math.max(0, remainingWindows.length - 1)]
+                    .window.id
+                : tabState.activeWindowId;
+
+            return prev.map((s) =>
+              s.tab.id === mapping.tabId
+                ? {
+                    ...s,
+                    windows: remainingWindows,
+                    activeWindowId: newActiveWindowId,
+                  }
+                : s,
+            );
           }
 
-          // Pane removed but tab survives
+          // Pane removed but window survives
           const leaves = allLeaves(newTree);
-          const newActivePaneId = leaves.some(
-            (l) => l.id === tabState.activePaneId,
-          )
-            ? tabState.activePaneId
+          const newActivePaneId = leaves.some((l) => l.id === win.activePaneId)
+            ? win.activePaneId
             : leaves[0].id;
 
           return prev.map((s) =>
             s.tab.id === mapping.tabId
-              ? { ...s, paneTree: newTree, activePaneId: newActivePaneId }
+              ? updateWindow(s, mapping.windowId, (ws) => ({
+                  ...ws,
+                  paneTree: newTree,
+                  activePaneId: newActivePaneId,
+                }))
               : s,
           );
         });
@@ -176,44 +232,54 @@ function App() {
   // Spawn PTY for panes that don't have one
   useEffect(() => {
     for (const ts of tabStates) {
-      for (const leaf of allLeaves(ts.paneTree)) {
-        if (leaf.ptyId != null) continue;
-        if (spawningPanes.current.has(leaf.id)) continue;
+      for (const ws of ts.windows) {
+        for (const leaf of allLeaves(ws.paneTree)) {
+          if (leaf.ptyId != null) continue;
+          if (spawningPanes.current.has(leaf.id)) continue;
 
-        spawningPanes.current.add(leaf.id);
-        const paneId = leaf.id;
-        const tabId = ts.tab.id;
-        log("Spawning PTY for pane", paneId, "in tab", tabId);
+          spawningPanes.current.add(leaf.id);
+          const paneId = leaf.id;
+          const tabId = ts.tab.id;
+          const windowId = ws.window.id;
+          log("Spawning PTY for pane", paneId, "in tab", tabId);
 
-        const handle = termRefs.current.get(paneId);
-        const cols = handle?.terminal?.cols;
-        const rows = handle?.terminal?.rows;
+          const handle = termRefs.current.get(paneId);
+          const cols = handle?.terminal?.cols;
+          const rows = handle?.terminal?.rows;
 
-        invoke<number>("create_pty", {
-          ...(cols != null && rows != null ? { cols, rows } : {}),
-          ...(leaf.initialCwd ? { cwd: leaf.initialCwd } : {}),
-        }).then((ptyId) => {
-          log("PTY created:", ptyId, "for pane", paneId);
-          spawningPanes.current.delete(paneId);
-          ptyToPane.current.set(ptyId, { tabId, paneId });
-          paneToPty.current.set(paneId, ptyId);
-          setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === tabId
-                ? { ...s, paneTree: updateLeafPtyId(s.paneTree, paneId, ptyId) }
-                : s,
-            ),
-          );
+          invoke<number>("create_pty", {
+            ...(cols != null && rows != null ? { cols, rows } : {}),
+            ...(leaf.initialCwd ? { cwd: leaf.initialCwd } : {}),
+          }).then((ptyId) => {
+            log("PTY created:", ptyId, "for pane", paneId);
+            spawningPanes.current.delete(paneId);
+            ptyToPane.current.set(ptyId, { tabId, windowId, paneId });
+            paneToPty.current.set(paneId, ptyId);
+            setTabStates((prev) =>
+              prev.map((s) =>
+                s.tab.id === tabId
+                  ? updateWindow(s, windowId, (w) => ({
+                      ...w,
+                      paneTree: updateLeafPtyId(w.paneTree, paneId, ptyId),
+                    }))
+                  : s,
+              ),
+            );
 
-          const cur = termRefs.current.get(paneId);
-          const curCols = cur?.terminal?.cols;
-          const curRows = cur?.terminal?.rows;
-          if (curCols != null && curRows != null) {
-            if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
-              invoke("resize_pty", { id: ptyId, cols: curCols, rows: curRows });
+            const cur = termRefs.current.get(paneId);
+            const curCols = cur?.terminal?.cols;
+            const curRows = cur?.terminal?.rows;
+            if (curCols != null && curRows != null) {
+              if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
+                invoke("resize_pty", {
+                  id: ptyId,
+                  cols: curCols,
+                  rows: curRows,
+                });
+              }
             }
-          }
-        });
+          });
+        }
       }
     }
   }, [tabStates]);
@@ -248,11 +314,20 @@ function App() {
 
   const handlePaneFocus = useCallback((paneId: string) => {
     setTabStates((prev) =>
-      prev.map((s) =>
-        s.tab.id === activeTabIdRef.current
-          ? { ...s, activePaneId: paneId }
-          : s,
-      ),
+      prev.map((s) => {
+        if (s.tab.id !== activeTabIdRef.current) return s;
+        const win = findWindowContainingPane(s.windows, paneId);
+        if (!win) return s;
+        return {
+          ...s,
+          activeWindowId: win.window.id,
+          windows: s.windows.map((ws) =>
+            ws.window.id === win.window.id
+              ? { ...ws, activePaneId: paneId }
+              : ws,
+          ),
+        };
+      }),
     );
   }, []);
 
@@ -261,11 +336,20 @@ function App() {
       setTabStates((prev) =>
         prev.map((s) => {
           if (s.tab.id !== activeTabIdRef.current) return s;
-          const split = findSplitNode(s.paneTree, splitNodeId);
-          if (!split) return s;
           return {
             ...s,
-            paneTree: updateRatio(s.paneTree, splitNodeId, split.ratio + delta),
+            windows: s.windows.map((ws) => {
+              const split = findSplitNode(ws.paneTree, splitNodeId);
+              if (!split) return ws;
+              return {
+                ...ws,
+                paneTree: updateRatio(
+                  ws.paneTree,
+                  splitNodeId,
+                  split.ratio + delta,
+                ),
+              };
+            }),
           };
         }),
       );
@@ -280,12 +364,16 @@ function App() {
     );
     if (!currentTab) return;
 
+    const activeWin = getActiveWindow(currentTab);
+    if (!activeWin && action !== "cancel" && action !== "toggle-sidebar")
+      return;
+
     switch (action) {
       case "split-horizontal":
       case "split-vertical": {
         const direction =
           action === "split-horizontal" ? "horizontal" : "vertical";
-        const activePtyId = paneToPty.current.get(currentTab.activePaneId);
+        const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
         const cwdPromise =
           activePtyId != null
             ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
@@ -297,9 +385,11 @@ function App() {
             (s) => s.tab.id === currentTabId,
           );
           if (!tab) return;
+          const win = getActiveWindow(tab);
+          if (!win) return;
           const result = splitPane(
-            tab.paneTree,
-            tab.activePaneId,
+            win.paneTree,
+            win.activePaneId,
             direction,
             cwd,
           );
@@ -307,11 +397,11 @@ function App() {
             setTabStates((prev) =>
               prev.map((s) =>
                 s.tab.id === currentTabId
-                  ? {
-                      ...s,
+                  ? updateWindow(s, win.window.id, (ws) => ({
+                      ...ws,
                       paneTree: result.tree,
                       activePaneId: result.newPaneId,
-                    }
+                    }))
                   : s,
               ),
             );
@@ -331,14 +421,19 @@ function App() {
         } as const;
         const dir = dirMap[action];
         const target = findAdjacentPane(
-          currentTab.paneTree,
-          currentTab.activePaneId,
+          activeWin!.paneTree,
+          activeWin!.activePaneId,
           dir,
         );
         if (target) {
           setTabStates((prev) =>
             prev.map((s) =>
-              s.tab.id === currentTabId ? { ...s, activePaneId: target } : s,
+              s.tab.id === currentTabId
+                ? updateWindow(s, activeWin!.window.id, (ws) => ({
+                    ...ws,
+                    activePaneId: target,
+                  }))
+                : s,
             ),
           );
         }
@@ -356,32 +451,34 @@ function App() {
         } as const;
         const dir = resizeDirMap[action];
         const info = findParentSplit(
-          currentTab.paneTree,
-          currentTab.activePaneId,
+          activeWin!.paneTree,
+          activeWin!.activePaneId,
           dir,
         );
         if (info) {
           setTabStates((prev) =>
             prev.map((s) => {
               if (s.tab.id !== currentTabId) return s;
-              const split = findSplitNode(s.paneTree, info.splitId);
-              if (!split) return s;
-              return {
-                ...s,
-                paneTree: updateRatio(
-                  s.paneTree,
-                  info.splitId,
-                  split.ratio + info.delta,
-                ),
-              };
+              return updateWindow(s, activeWin!.window.id, (ws) => {
+                const split = findSplitNode(ws.paneTree, info.splitId);
+                if (!split) return ws;
+                return {
+                  ...ws,
+                  paneTree: updateRatio(
+                    ws.paneTree,
+                    info.splitId,
+                    split.ratio + info.delta,
+                  ),
+                };
+              });
             }),
           );
         }
         break;
       }
       case "close-pane": {
-        const leaves = allLeaves(currentTab.paneTree);
-        const activePaneId = currentTab.activePaneId;
+        const leaves = allLeaves(activeWin!.paneTree);
+        const activePaneId = activeWin!.activePaneId;
         const activeLeaf = leaves.find((l) => l.id === activePaneId);
 
         // Close the PTY for this pane
@@ -392,19 +489,43 @@ function App() {
         }
         termRefs.current.delete(activePaneId);
 
-        const newTree = closePane(currentTab.paneTree, activePaneId);
+        const newTree = closePane(activeWin!.paneTree, activePaneId);
         if (newTree === null) {
-          // Last pane - close the tab
-          const remaining = tabStatesRef.current.filter(
-            (s) => s.tab.id !== currentTabId,
+          // Last pane in window - remove window
+          const remainingWindows = currentTab.windows.filter(
+            (ws) => ws.window.id !== activeWin!.window.id,
           );
-          if (remaining.length === 0) {
-            closeAppWindow();
-            return;
-          }
-          setTabStates(remaining);
-          if (activeTabIdRef.current === currentTabId) {
-            setActiveTabId(remaining[Math.max(0, remaining.length - 1)].tab.id);
+
+          if (remainingWindows.length === 0) {
+            // Last window in tab - close the tab
+            const remaining = tabStatesRef.current.filter(
+              (s) => s.tab.id !== currentTabId,
+            );
+            if (remaining.length === 0) {
+              closeAppWindow();
+              return;
+            }
+            setTabStates(remaining);
+            if (activeTabIdRef.current === currentTabId) {
+              setActiveTabId(
+                remaining[Math.max(0, remaining.length - 1)].tab.id,
+              );
+            }
+          } else {
+            const newActiveWindowId =
+              remainingWindows[Math.max(0, remainingWindows.length - 1)].window
+                .id;
+            setTabStates((prev) =>
+              prev.map((s) =>
+                s.tab.id === currentTabId
+                  ? {
+                      ...s,
+                      windows: remainingWindows,
+                      activeWindowId: newActiveWindowId,
+                    }
+                  : s,
+              ),
+            );
           }
         } else {
           const newLeaves = allLeaves(newTree);
@@ -412,7 +533,11 @@ function App() {
           setTabStates((prev) =>
             prev.map((s) =>
               s.tab.id === currentTabId
-                ? { ...s, paneTree: newTree, activePaneId: newActivePaneId }
+                ? updateWindow(s, activeWin!.window.id, (ws) => ({
+                    ...ws,
+                    paneTree: newTree,
+                    activePaneId: newActivePaneId,
+                  }))
                 : s,
             ),
           );
@@ -422,6 +547,67 @@ function App() {
       case "toggle-sidebar":
         setSidebarVisible((v) => !v);
         break;
+      case "create-window": {
+        const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
+        const cwdPromise =
+          activePtyId != null
+            ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
+                () => undefined,
+              )
+            : Promise.resolve(undefined);
+        cwdPromise.then((cwd) => {
+          const tab = tabStatesRef.current.find(
+            (s) => s.tab.id === currentTabId,
+          );
+          if (!tab) return;
+          const newWin = createWindowState(`Window ${tab.nextWindowNum}`, cwd);
+          setTabStates((prev) =>
+            prev.map((s) =>
+              s.tab.id === currentTabId
+                ? {
+                    ...s,
+                    windows: [...s.windows, newWin],
+                    activeWindowId: newWin.window.id,
+                    nextWindowNum: s.nextWindowNum + 1,
+                  }
+                : s,
+            ),
+          );
+        });
+        break;
+      }
+      case "next-window": {
+        const windows = currentTab.windows;
+        if (windows.length <= 1) break;
+        const currentIdx = windows.findIndex(
+          (ws) => ws.window.id === currentTab.activeWindowId,
+        );
+        const nextIdx = (currentIdx + 1) % windows.length;
+        setTabStates((prev) =>
+          prev.map((s) =>
+            s.tab.id === currentTabId
+              ? { ...s, activeWindowId: windows[nextIdx].window.id }
+              : s,
+          ),
+        );
+        break;
+      }
+      case "prev-window": {
+        const windows = currentTab.windows;
+        if (windows.length <= 1) break;
+        const currentIdx = windows.findIndex(
+          (ws) => ws.window.id === currentTab.activeWindowId,
+        );
+        const prevIdx = (currentIdx - 1 + windows.length) % windows.length;
+        setTabStates((prev) =>
+          prev.map((s) =>
+            s.tab.id === currentTabId
+              ? { ...s, activeWindowId: windows[prevIdx].window.id }
+              : s,
+          ),
+        );
+        break;
+      }
       case "select-pane-1":
       case "select-pane-2":
       case "select-pane-3":
@@ -432,14 +618,28 @@ function App() {
       case "select-pane-8":
       case "select-pane-9": {
         const idx = parseInt(action.slice(-1)) - 1;
-        const leaves = allLeaves(currentTab.paneTree);
-        if (idx < leaves.length) {
+        // Collect all leaves across all windows with their window reference
+        const allPanes: { paneId: string; windowId: string }[] = [];
+        for (const ws of currentTab.windows) {
+          for (const leaf of allLeaves(ws.paneTree)) {
+            allPanes.push({ paneId: leaf.id, windowId: ws.window.id });
+          }
+        }
+        if (idx < allPanes.length) {
+          const target = allPanes[idx];
           setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === currentTabId
-                ? { ...s, activePaneId: leaves[idx].id }
-                : s,
-            ),
+            prev.map((s) => {
+              if (s.tab.id !== currentTabId) return s;
+              return {
+                ...s,
+                activeWindowId: target.windowId,
+                windows: s.windows.map((ws) =>
+                  ws.window.id === target.windowId
+                    ? { ...ws, activePaneId: target.paneId }
+                    : ws,
+                ),
+              };
+            }),
           );
         }
         break;
@@ -463,14 +663,16 @@ function App() {
     if (!ts) return;
     log("Close tab:", tabId);
 
-    // Close all PTYs in this tab
-    for (const leaf of allLeaves(ts.paneTree)) {
-      if (leaf.ptyId != null) {
-        invoke("close_pty", { id: leaf.ptyId });
-        ptyToPane.current.delete(leaf.ptyId);
-        paneToPty.current.delete(leaf.id);
+    // Close all PTYs in all windows of this tab
+    for (const ws of ts.windows) {
+      for (const leaf of allLeaves(ws.paneTree)) {
+        if (leaf.ptyId != null) {
+          invoke("close_pty", { id: leaf.ptyId });
+          ptyToPane.current.delete(leaf.ptyId);
+          paneToPty.current.delete(leaf.id);
+        }
+        termRefs.current.delete(leaf.id);
       }
-      termRefs.current.delete(leaf.id);
     }
 
     const remaining = tabStatesRef.current.filter((s) => s.tab.id !== tabId);
@@ -510,16 +712,34 @@ function App() {
 
   const activeTabState = tabStates.find((s) => s.tab.id === activeTabId);
   const activeLeaves = useMemo(
-    () => (activeTabState ? allLeaves(activeTabState.paneTree) : []),
+    () => (activeTabState ? allLeavesInTab(activeTabState.windows) : []),
     [activeTabState],
   );
   const sidebarPanes: PaneInfo[] = activeTabState
-    ? activeLeaves.map((leaf, i) => ({
-        id: leaf.id,
-        index: i + 1,
-        isActive: leaf.id === activeTabState.activePaneId,
-      }))
+    ? activeTabState.windows
+        .flatMap((ws) =>
+          allLeaves(ws.paneTree).map((leaf) => ({
+            id: leaf.id,
+            isActive:
+              ws.window.id === activeTabState.activeWindowId &&
+              leaf.id === ws.activePaneId,
+            windowId: ws.window.id,
+          })),
+        )
+        .map((p, i) => ({ ...p, index: i + 1 }))
     : [];
+
+  const sidebarWindows = useMemo(
+    () =>
+      activeTabState
+        ? activeTabState.windows.map((ws) => ({
+            id: ws.window.id,
+            title: ws.window.title,
+            isActive: ws.window.id === activeTabState.activeWindowId,
+          }))
+        : [],
+    [activeTabState],
+  );
 
   const paneToPtyEntries: [string, number][] = useMemo(
     () =>
@@ -530,11 +750,45 @@ function App() {
   );
   const paneMetadata = usePaneMetadata(paneToPtyEntries);
 
+  const windowIndicators = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ts of tabStates) {
+      if (ts.windows.length >= 2) {
+        const activeIdx =
+          ts.windows.findIndex((ws) => ws.window.id === ts.activeWindowId) + 1;
+        map.set(ts.tab.id, `[${activeIdx}/${ts.windows.length}]`);
+      }
+    }
+    return map;
+  }, [tabStates]);
+
+  // Window switch: fit and focus terminals
+  const prevActiveWindowIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const activeTab = tabStates.find((ts) => ts.tab.id === activeTabId);
+    if (!activeTab) return;
+    const currentWindowId = activeTab.activeWindowId;
+    if (prevActiveWindowIdRef.current === currentWindowId) return;
+    prevActiveWindowIdRef.current = currentWindowId;
+
+    const activeWin = activeTab.windows.find(
+      (ws) => ws.window.id === currentWindowId,
+    );
+    if (!activeWin) return;
+    requestAnimationFrame(() => {
+      for (const leaf of allLeaves(activeWin.paneTree)) {
+        termRefs.current.get(leaf.id)?.fit();
+      }
+      termRefs.current.get(activeWin.activePaneId)?.terminal?.focus();
+    });
+  }, [tabStates, activeTabId]);
+
   return (
     <div className="app-root">
       <TitleBar
         tabs={tabs}
         activeTabId={activeTabId}
+        windowIndicators={windowIndicators}
         onNewTab={handleNewTab}
         onCloseTab={handleCloseTab}
         onSelectTab={setActiveTabId}
@@ -545,6 +799,7 @@ function App() {
         {sidebarVisible && (
           <Sidebar
             panes={sidebarPanes}
+            windows={sidebarWindows}
             metadata={paneMetadata}
             claudeStatus={claudeStatus}
             onSelectPane={handlePaneFocus}
@@ -563,16 +818,39 @@ function App() {
                 visibility: ts.tab.id === activeTabId ? "visible" : "hidden",
               }}
             >
-              <PaneContainer
-                node={ts.paneTree}
-                activePaneId={ts.tab.id === activeTabId ? ts.activePaneId : ""}
-                onData={handlePaneData}
-                onResize={handlePaneResize}
-                onPaneRef={handlePaneRef}
-                onPaneFocus={handlePaneFocus}
-                onDividerDrag={handleDividerDrag}
-                onTitleChange={handleTitleChange}
-              />
+              {ts.windows.map((ws) => (
+                <div
+                  key={ws.window.id}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    visibility:
+                      ts.tab.id === activeTabId &&
+                      ws.window.id === ts.activeWindowId
+                        ? "visible"
+                        : "hidden",
+                  }}
+                >
+                  <PaneContainer
+                    node={ws.paneTree}
+                    activePaneId={
+                      ts.tab.id === activeTabId &&
+                      ws.window.id === ts.activeWindowId
+                        ? ws.activePaneId
+                        : ""
+                    }
+                    onData={handlePaneData}
+                    onResize={handlePaneResize}
+                    onPaneRef={handlePaneRef}
+                    onPaneFocus={handlePaneFocus}
+                    onDividerDrag={handleDividerDrag}
+                    onTitleChange={handleTitleChange}
+                  />
+                </div>
+              ))}
             </div>
           ))}
         </div>
