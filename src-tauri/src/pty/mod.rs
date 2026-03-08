@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -22,8 +22,7 @@ type CwdMap = Arc<Mutex<HashMap<PtyId, SharedCwd>>>;
 struct PtyInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
-    #[allow(dead_code)]
-    child: Box<dyn Child + Send>,
+    child_pid: Option<u32>,
 }
 
 pub struct PtyManager {
@@ -152,10 +151,12 @@ impl PtyManager {
             );
         }
 
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn command: {e}"))?;
+
+        let child_pid = child.process_id();
 
         let writer = pair
             .master
@@ -179,7 +180,7 @@ impl PtyManager {
         let instance = PtyInstance {
             master: pair.master,
             writer,
-            child,
+            child_pid,
         };
 
         // Create shared CWD storage for this PTY
@@ -194,8 +195,8 @@ impl PtyManager {
             .map_err(|e| e.to_string())?
             .insert(id, instance);
 
-        let instances = Arc::clone(&self.instances);
-        let cwd_map = Arc::clone(&self.cwd_map);
+        let instances_for_reader = Arc::clone(&self.instances);
+        let cwd_map_for_reader = Arc::clone(&self.cwd_map);
 
         // Spawn a thread to read PTY output
         thread::spawn(move || {
@@ -221,13 +222,26 @@ impl PtyManager {
                 }
             }
             // Clean up instance and CWD entry, then notify frontend
-            if let Ok(mut map) = instances.lock() {
+            if let Ok(mut map) = instances_for_reader.lock() {
                 map.remove(&id);
             }
-            if let Ok(mut map) = cwd_map.lock() {
+            if let Ok(mut map) = cwd_map_for_reader.lock() {
                 map.remove(&id);
             }
             on_exit(id);
+        });
+
+        // Spawn a waiter thread to detect when the child process exits.
+        // On Windows ConPTY, the reader thread does not receive EOF when the
+        // child exits. By waiting on the child and then dropping the master PTY
+        // (via removing the instance from the map), we force the reader's pipe
+        // to break, which unblocks the reader and triggers on_exit.
+        let instances_for_waiter = Arc::clone(&self.instances);
+        thread::spawn(move || {
+            let _ = child.wait();
+            if let Ok(mut map) = instances_for_waiter.lock() {
+                map.remove(&id);
+            }
         });
 
         Ok(id)
@@ -280,7 +294,7 @@ impl PtyManager {
         let instance = instances
             .get(&id)
             .ok_or_else(|| format!("PTY {id} not found"))?;
-        Ok(instance.child.process_id())
+        Ok(instance.child_pid)
     }
 
     /// Get the CWD reported by OSC 7 for a PTY.
@@ -303,15 +317,14 @@ impl PtyManager {
     ///
     /// Returns an error if the mutex is poisoned.
     pub fn close(&self, id: PtyId) -> Result<(), String> {
-        if let Some(mut instance) = self
-            .instances
+        // Dropping the PtyInstance closes the master PTY.
+        // On Unix this sends SIGHUP to the child process group.
+        // On Windows this closes the ConPTY, terminating attached processes.
+        // Either way the reader thread will get EOF/error and call on_exit.
+        self.instances
             .lock()
             .map_err(|e| e.to_string())?
-            .remove(&id)
-        {
-            instance.child.kill().ok();
-            instance.child.wait().ok();
-        }
+            .remove(&id);
         if let Ok(mut map) = self.cwd_map.lock() {
             map.remove(&id);
         }
