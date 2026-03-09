@@ -102,6 +102,21 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
 
       fitAddon.fit();
 
+      // Workaround: xterm.js v6 does not support the CSI u (kitty) keyboard
+      // protocol, so Ctrl+Enter is indistinguishable from Enter.  We intercept
+      // Ctrl+Enter here and manually emit the CSI u sequence so that TUI apps
+      // like Claude Code can recognise it as a newline insertion.
+      // TODO: Remove once xterm.js v7 is released with vtExtensions.kittyKeyboard support.
+      terminal.attachCustomKeyEventHandler((e) => {
+        if (e.type === "keydown" && e.key === "Enter" && e.ctrlKey) {
+          // CSI u encoding: CSI keycode ; modifiers u
+          // Enter = 13, Ctrl modifier = 5
+          onDataRef.current?.("\x1b[13;5u");
+          return false;
+        }
+        return true;
+      });
+
       terminal.onData((data) => {
         onDataRef.current?.(data);
       });
