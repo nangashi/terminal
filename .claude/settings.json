@@ -14,6 +14,17 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FLAG=/tmp/claude-stop-hook-failed; if [ -f \"$FLAG\" ]; then rm -f \"$FLAG\"; echo \"[Stop Hook] Skipping tests (already failed once). Please fix and run just test manually.\" >&2; exit 0; fi; cd /home/toyama-ryosuke/ghq/github.com/nangashi/terminal && OUTPUT=$(just test 2>&1); EXIT=$?; if [ $EXIT -ne 0 ]; then touch \"$FLAG\"; echo \"$OUTPUT\" | tail -30; echo \"\\n[Stop Hook] Tests failed. Fix the issues before completing.\" >&2; exit 1; fi; rm -f \"$FLAG\"; echo \"[Stop Hook] All tests passed.\"; exit 0'"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
