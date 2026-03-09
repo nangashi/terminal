@@ -98,6 +98,79 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Directory for zsh shell integration files (OSC 7 CWD reporting).
+const ZSH_INT_DIR: &str = "/tmp/.terminal-osc7";
+
+/// Content for the zsh integration `.zshenv` file.
+/// Restores the original `ZDOTDIR`, sources the user's `.zshenv`,
+/// and registers an OSC 7 `precmd` hook.
+const ZSHENV_OSC7: &str = r#"if [ -n "$_TERMINAL_ORIG_ZDOTDIR" ]; then ZDOTDIR="$_TERMINAL_ORIG_ZDOTDIR"; else unset ZDOTDIR; fi
+unset _TERMINAL_ORIG_ZDOTDIR
+[ -f "${ZDOTDIR:-$HOME}/.zshenv" ] && . "${ZDOTDIR:-$HOME}/.zshenv"
+__terminal_osc7_precmd() { printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"; }
+precmd_functions+=(__terminal_osc7_precmd)
+"#;
+
+/// Wrapper script for `wsl.exe -e sh -c '...'` that sets up OSC 7
+/// CWD reporting for both bash (`PROMPT_COMMAND`) and zsh (`ZDOTDIR`
+/// trick with `precmd` hook) inside WSL, then execs the user's login shell.
+const WSL_WRAPPER: &str = r#"_d=/tmp/.terminal-osc7
+mkdir -p "$_d" 2>/dev/null
+cat > "$_d/.zshenv" << 'ZSHENV'
+if [ -n "$_TERMINAL_ORIG_ZDOTDIR" ]; then ZDOTDIR="$_TERMINAL_ORIG_ZDOTDIR"; else unset ZDOTDIR; fi
+unset _TERMINAL_ORIG_ZDOTDIR
+[ -f "${ZDOTDIR:-$HOME}/.zshenv" ] && . "${ZDOTDIR:-$HOME}/.zshenv"
+__terminal_osc7_precmd() { printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"; }
+precmd_functions+=(__terminal_osc7_precmd)
+ZSHENV
+export _TERMINAL_ORIG_ZDOTDIR="${ZDOTDIR:-}"
+export ZDOTDIR="$_d"
+export PROMPT_COMMAND='printf '"'"'\033]7;file://%s%s\a'"'"' "$(hostname)" "$PWD"'
+exec "$SHELL" -l"#;
+
+/// Configure `cmd` with OSC 7 CWD reporting and working directory.
+///
+/// For `wsl.exe`: uses a wrapper script that sets up both bash and zsh
+/// integration, then execs the user's login shell.
+///
+/// For native shells: sets `PROMPT_COMMAND` (bash) and optionally the
+/// `ZDOTDIR` trick (zsh) to inject a `precmd` hook.
+fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, dir: &str) {
+    if shell.ends_with("wsl.exe") {
+        // On Windows with wsl.exe, use --cd to set the working directory
+        // inside the Linux filesystem.  cmd.cwd() sets the Win32
+        // lpCurrentDirectory which cannot represent Linux paths.
+        cmd.arg("--cd");
+        cmd.arg(dir);
+        // Wrapper script sets up OSC 7 for both bash (`PROMPT_COMMAND`)
+        // and zsh (`ZDOTDIR` + `precmd` hook), then execs the user's login
+        // shell.
+        cmd.arg("-e");
+        cmd.arg("sh");
+        cmd.arg("-c");
+        cmd.arg(WSL_WRAPPER);
+    } else {
+        cmd.cwd(dir);
+        // Inject OSC 7 CWD reporting so the terminal can track CWD.
+        if !shell.ends_with("cmd.exe") {
+            // bash: PROMPT_COMMAND
+            cmd.env(
+                "PROMPT_COMMAND",
+                r#"printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"#,
+            );
+            // zsh: ZDOTDIR trick — inject a .zshenv that adds a precmd hook.
+            if shell.contains("zsh") {
+                let _ = std::fs::create_dir_all(ZSH_INT_DIR);
+                let _ = std::fs::write(format!("{ZSH_INT_DIR}/.zshenv"), ZSHENV_OSC7);
+                if let Ok(orig) = std::env::var("ZDOTDIR") {
+                    cmd.env("_TERMINAL_ORIG_ZDOTDIR", orig);
+                }
+                cmd.env("ZDOTDIR", ZSH_INT_DIR);
+            }
+        }
+    }
+}
+
 impl PtyManager {
     #[must_use]
     pub fn new() -> Self {
@@ -139,28 +212,7 @@ impl PtyManager {
             None => std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
         };
 
-        // On Windows with wsl.exe, use the --cd flag to set the working
-        // directory inside the Linux filesystem.  cmd.cwd() sets the Win32
-        // lpCurrentDirectory which cannot represent Linux paths reported by
-        // OSC 7 (e.g. /home/user/project), so pane-split CWD inheritance
-        // would silently fail.
-        if shell.ends_with("wsl.exe") {
-            cmd.arg("--cd");
-            cmd.arg(&dir);
-        } else {
-            cmd.cwd(&dir);
-        }
-
-        // Inject OSC 7 CWD reporting via environment variable (no PTY echo).
-        // bash evaluates PROMPT_COMMAND before each prompt.
-        // If the user's .bashrc overrides PROMPT_COMMAND, this is lost,
-        // but on Linux /proc fallback still works.
-        if !shell.ends_with("cmd.exe") {
-            cmd.env(
-                "PROMPT_COMMAND",
-                r#"printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"#,
-            );
-        }
+        setup_cwd_and_osc7(&mut cmd, shell, &dir);
 
         let mut child = pair
             .slave
