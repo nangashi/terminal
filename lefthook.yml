@@ -11,6 +11,8 @@ pre-commit:
       run: TMPDIR=/tmp pnpm oxlint src/
     tsc:
       run: TMPDIR=/tmp pnpm tsc --noEmit
+    gitleaks:
+      run: gitleaks protect --staged
 
 pre-push:
   commands:

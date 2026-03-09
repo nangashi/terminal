@@ -42,10 +42,10 @@ jobs:
           manifest-path: src-tauri/Cargo.toml
       - name: TypeScript
         run: pnpm tsc --noEmit
-      - name: ESLint
-        run: pnpm eslint .
-      - name: Prettier
-        run: pnpm prettier --check "src/**/*.{ts,tsx}"
+      - name: Biome
+        run: pnpm biome check src/
+      - name: Oxlint
+        run: pnpm oxlint src/
       - name: Rust tests
         run: cd src-tauri && cargo nextest run --workspace
       - name: Frontend tests

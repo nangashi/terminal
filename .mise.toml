@@ -8,3 +8,6 @@ version = "latest"
 
 [tools.lefthook]
 version = "latest"
+
+[tools.gitleaks]
+version = "latest"

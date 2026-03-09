@@ -6,7 +6,7 @@ dev:
     TMPDIR=/tmp pnpm tauri dev
 
 # Lint & Format checks
-lint: lint-rust lint-frontend
+lint: lint-rust lint-frontend lint-secrets
 
 lint-rust:
     cargo fmt --check --manifest-path src-tauri/Cargo.toml
@@ -19,6 +19,9 @@ lint-frontend:
     TMPDIR=/tmp pnpm tsc --noEmit
     TMPDIR=/tmp pnpm biome check src/
     TMPDIR=/tmp pnpm oxlint src/
+
+lint-secrets:
+    gitleaks detect --no-banner
 
 # Format
 fmt:
