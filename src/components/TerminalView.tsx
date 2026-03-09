@@ -137,9 +137,11 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       // textarea along.  If the user starts IME composition at that point the
       // candidate window appears at the wrong position.
       //
-      // To mitigate this we record the textarea position on every *non-IME*
-      // keystroke (the last position where the user actually typed) and use
-      // that as the IME lock anchor when composition starts.
+      // To mitigate this we record the textarea position after a short delay
+      // following each non-IME keystroke.  The delay (50ms) allows the PTY
+      // round-trip and TUI re-render to complete, so the captured position
+      // reflects where the cursor settled after the TUI processed the input
+      // — not where it was during rendering.
       const textarea = container.querySelector<HTMLTextAreaElement>(
         ".xterm-helper-textarea",
       );
@@ -150,11 +152,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       let imeAnchorViewport: { left: number; top: number } | null = null;
       // Container-relative coords (for compositionView with position: absolute)
       let imeAnchorLocal: { left: string; top: string } | null = null;
+      let imeAnchorTimer: ReturnType<typeof setTimeout> | undefined;
 
-      const trackImeAnchor = (e: KeyboardEvent) => {
-        // keyCode 229 = IME composition character; skip to avoid capturing
-        // the cursor position that TUI rendering may have moved to.
-        if (e.keyCode !== 229 && textarea) {
+      const captureImeAnchor = () => {
+        if (textarea) {
           const rect = textarea.getBoundingClientRect();
           imeAnchorViewport = { left: rect.left, top: rect.top };
           imeAnchorLocal = {
@@ -164,7 +165,21 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         }
       };
 
+      const trackImeAnchor = (e: KeyboardEvent) => {
+        // keyCode 229 = IME composition character; skip to avoid capturing
+        // the cursor position that TUI rendering may have moved to.
+        if (e.keyCode !== 229) {
+          clearTimeout(imeAnchorTimer);
+          // Wait for PTY round-trip + TUI re-render before capturing.
+          imeAnchorTimer = setTimeout(captureImeAnchor, 50);
+        }
+      };
+
       const lockImePosition = () => {
+        // Stop any pending capture — the anchor must stay stable during
+        // composition.
+        clearTimeout(imeAnchorTimer);
+
         if (textarea) {
           const pos =
             imeAnchorViewport ??
@@ -214,6 +229,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminalRef.current = terminal;
 
       return () => {
+        clearTimeout(imeAnchorTimer);
         textarea?.removeEventListener("keydown", trackImeAnchor);
         textarea?.removeEventListener("compositionstart", lockImePosition);
         textarea?.removeEventListener("compositionend", unlockImePosition);
