@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "context7@claude-plugins-official": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(jq -r \".tool_input.file_path // .tool_input.path\" <<< \"$(cat)\"); PROTECTED=\"eslint.config .prettierrc rustfmt.toml lefthook.yml\"; for p in $PROTECTED; do case \"$FILE\" in *$p*) echo \"BLOCKED: $FILE is a protected config file. Fix the code, not the linter/formatter config.\" >&2; exit 2;; esac; done'"
+          }
+        ]
+      }
+    ]
   }
 }
