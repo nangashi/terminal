@@ -10,21 +10,34 @@ pub struct GitInfo {
     pub is_dirty: bool,
 }
 
+/// On Windows, apply CREATE_NO_WINDOW to prevent the default terminal
+/// (Windows Terminal) from intercepting console creation and flashing
+/// a visible window every time a subprocess is spawned.
+#[cfg(target_os = "windows")]
+fn apply_no_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_no_window(_cmd: &mut Command) {}
+
 fn git_output(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
     let output = if cfg!(target_os = "windows") && path.to_str().is_some_and(|p| p.starts_with('/'))
     {
-        // WSL path — run git via wsl using -C to set the working directory
+        // WSL path — run git via wsl using -C to set the working directory.
         let path_str = path.to_str()?;
         let mut cmd = Command::new("wsl");
         cmd.args(["--", "git", "-C", path_str]);
         cmd.args(args);
+        apply_no_window(&mut cmd);
         cmd.output().ok()?
     } else {
-        Command::new("git")
-            .args(args)
-            .current_dir(path)
-            .output()
-            .ok()?
+        let mut cmd = Command::new("git");
+        cmd.args(args);
+        cmd.current_dir(path);
+        apply_no_window(&mut cmd);
+        cmd.output().ok()?
     };
     output.status.success().then_some(output.stdout)
 }

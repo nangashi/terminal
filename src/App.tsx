@@ -292,12 +292,6 @@ function App() {
           const paneId = leaf.id;
           const tabId = ts.tab.id;
           const windowId = ws.window.id;
-          console.warn(
-            "[App] Spawning PTY for pane",
-            paneId,
-            "timestamp:",
-            Date.now(),
-          );
           log("Spawning PTY for pane", paneId, "in tab", tabId);
 
           const handle = termRefs.current.get(paneId);
