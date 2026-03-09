@@ -5,10 +5,10 @@ pre-commit:
       run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
     rust-clippy:
       run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-    eslint:
-      run: TMPDIR=/tmp pnpm eslint .
-    prettier:
-      run: TMPDIR=/tmp pnpm prettier --check "src/**/*.{ts,tsx}"
+    biome:
+      run: TMPDIR=/tmp pnpm biome check src/
+    oxlint:
+      run: TMPDIR=/tmp pnpm oxlint src/
     tsc:
       run: TMPDIR=/tmp pnpm tsc --noEmit
 

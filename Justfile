@@ -17,13 +17,13 @@ lint-rust:
 # Override TMPDIR for pnpm commands to use a writable temp directory.
 lint-frontend:
     TMPDIR=/tmp pnpm tsc --noEmit
-    TMPDIR=/tmp pnpm eslint .
-    TMPDIR=/tmp pnpm prettier --check "src/**/*.{ts,tsx}"
+    TMPDIR=/tmp pnpm biome check src/
+    TMPDIR=/tmp pnpm oxlint src/
 
 # Format
 fmt:
     cargo fmt --manifest-path src-tauri/Cargo.toml
-    TMPDIR=/tmp pnpm prettier --write "src/**/*.{ts,tsx}"
+    TMPDIR=/tmp pnpm biome check --write src/
 
 # Tests
 test: test-rust test-frontend

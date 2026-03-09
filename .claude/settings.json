@@ -3,13 +3,24 @@
     "context7@claude-plugins-official": true
   },
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(jq -r \".tool_input.file_path // .tool_input.path\" <<< \"$(cat)\"); case \"$FILE\" in *.ts|*.tsx) cd /home/toyama-ryosuke/ghq/github.com/nangashi/terminal && TMPDIR=/tmp pnpm biome format --write \"$FILE\" 2>/dev/null; TMPDIR=/tmp pnpm oxlint \"$FILE\" 2>&1 | tail -20;; *.rs) rustfmt \"$FILE\" 2>/dev/null;; esac'"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=$(jq -r \".tool_input.file_path // .tool_input.path\" <<< \"$(cat)\"); PROTECTED=\"eslint.config .prettierrc rustfmt.toml lefthook.yml\"; for p in $PROTECTED; do case \"$FILE\" in *$p*) echo \"BLOCKED: $FILE is a protected config file. Fix the code, not the linter/formatter config.\" >&2; exit 2;; esac; done'"
+            "command": "bash -c 'FILE=$(jq -r \".tool_input.file_path // .tool_input.path\" <<< \"$(cat)\"); PROTECTED=\"biome.json .oxlintrc.json rustfmt.toml lefthook.yml\"; for p in $PROTECTED; do case \"$FILE\" in *$p*) echo \"BLOCKED: $FILE is a protected config file. Fix the code, not the linter/formatter config.\" >&2; exit 2;; esac; done'"
           }
         ]
       }
