@@ -23,16 +23,44 @@ pub struct PtyExit {
 
 /// Returns the default shell for the current platform.
 fn default_shell() -> String {
-    // On Windows, prefer WSL if available, otherwise cmd.exe
-    if cfg!(target_os = "windows") {
-        if std::path::Path::new("C:\\Windows\\System32\\wsl.exe").exists() {
-            return "wsl.exe".to_string();
-        }
-        return "cmd.exe".to_string();
+    #[cfg(target_os = "windows")]
+    {
+        return default_shell_windows();
     }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    }
+}
 
-    // On Linux/macOS, use SHELL env or fall back to /bin/sh
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+/// Windows: prefer WSL (if a distribution is installed), otherwise cmd.exe.
+///
+/// Uses full paths and verifies WSL availability to prevent invisible
+/// ConPTY/console windows from spawning when no distribution exists.
+#[cfg(target_os = "windows")]
+fn default_shell_windows() -> String {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let wsl_path = r"C:\Windows\System32\wsl.exe";
+    if std::path::Path::new(wsl_path).exists() {
+        // Verify at least one WSL distribution is installed.
+        // Without this, wsl.exe exists but exits immediately with an error,
+        // causing flickering console windows via ConPTY.
+        if let Ok(output) = std::process::Command::new(wsl_path)
+            .args(["--list", "--quiet"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            if output.status.success() {
+                return wsl_path.to_string();
+            }
+        }
+    }
+    r"C:\Windows\System32\cmd.exe".to_string()
 }
 
 #[tauri::command]

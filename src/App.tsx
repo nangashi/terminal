@@ -301,31 +301,36 @@ function App() {
           invoke<number>("create_pty", {
             ...(cols != null && rows != null ? { cols, rows } : {}),
             ...(leaf.initialCwd ? { cwd: leaf.initialCwd } : {}),
-          }).then((ptyId) => {
-            log("PTY created:", ptyId, "for pane", paneId);
-            spawningPanes.current.delete(paneId);
-            ptyToPane.current.set(ptyId, { tabId, windowId, paneId });
-            paneToPty.current.set(paneId, ptyId);
-            updateTab(tabId, (s) =>
-              updateWindow(s, windowId, (w) => ({
-                ...w,
-                paneTree: updateLeafPtyId(w.paneTree, paneId, ptyId),
-              })),
-            );
+          })
+            .then((ptyId) => {
+              log("PTY created:", ptyId, "for pane", paneId);
+              spawningPanes.current.delete(paneId);
+              ptyToPane.current.set(ptyId, { tabId, windowId, paneId });
+              paneToPty.current.set(paneId, ptyId);
+              updateTab(tabId, (s) =>
+                updateWindow(s, windowId, (w) => ({
+                  ...w,
+                  paneTree: updateLeafPtyId(w.paneTree, paneId, ptyId),
+                })),
+              );
 
-            const cur = termRefs.current.get(paneId);
-            const curCols = cur?.terminal?.cols;
-            const curRows = cur?.terminal?.rows;
-            if (curCols != null && curRows != null) {
-              if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
-                invoke("resize_pty", {
-                  id: ptyId,
-                  cols: curCols,
-                  rows: curRows,
-                });
+              const cur = termRefs.current.get(paneId);
+              const curCols = cur?.terminal?.cols;
+              const curRows = cur?.terminal?.rows;
+              if (curCols != null && curRows != null) {
+                if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
+                  invoke("resize_pty", {
+                    id: ptyId,
+                    cols: curCols,
+                    rows: curRows,
+                  });
+                }
               }
-            }
-          });
+            })
+            .catch((err) => {
+              console.error("[App] Failed to create PTY for pane", paneId, err);
+              spawningPanes.current.delete(paneId);
+            });
         }
       }
     }

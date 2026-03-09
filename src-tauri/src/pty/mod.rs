@@ -128,20 +128,36 @@ export ZDOTDIR="$_d"
 export PROMPT_COMMAND='printf '"'"'\033]7;file://%s%s\a'"'"' "$(hostname)" "$PWD"'
 exec "$SHELL" -l"#;
 
+/// Returns the default home directory for the current platform.
+/// Tries `HOME` first, then `USERPROFILE` (Windows), with a safe fallback.
+fn default_home_dir() -> String {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| {
+            if cfg!(target_os = "windows") {
+                "C:\\".to_string()
+            } else {
+                "/".to_string()
+            }
+        })
+}
+
 /// Configure `cmd` with OSC 7 CWD reporting and working directory.
 ///
-/// For `wsl.exe`: uses a wrapper script that sets up both bash and zsh
-/// integration, then execs the user's login shell.
+/// For `wsl.exe`: uses `--cd` to set the working directory inside WSL
+/// (defaults to `~` for the Linux user's home) and a wrapper script that
+/// sets up both bash and zsh integration, then execs the user's login shell.
 ///
 /// For native shells: sets `PROMPT_COMMAND` (bash) and optionally the
 /// `ZDOTDIR` trick (zsh) to inject a `precmd` hook.
-fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, dir: &str) {
+fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, cwd: Option<&str>) {
     if shell.ends_with("wsl.exe") {
         // On Windows with wsl.exe, use --cd to set the working directory
         // inside the Linux filesystem.  cmd.cwd() sets the Win32
         // lpCurrentDirectory which cannot represent Linux paths.
+        // Default to "~" (WSL user's home) when no explicit cwd is given.
         cmd.arg("--cd");
-        cmd.arg(dir);
+        cmd.arg(cwd.unwrap_or("~"));
         // Wrapper script sets up OSC 7 for both bash (`PROMPT_COMMAND`)
         // and zsh (`ZDOTDIR` + `precmd` hook), then execs the user's login
         // shell.
@@ -150,6 +166,7 @@ fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, dir: &str) {
         cmd.arg("-c");
         cmd.arg(WSL_WRAPPER);
     } else {
+        let dir = cwd.map_or_else(default_home_dir, String::from);
         cmd.cwd(dir);
         // Inject OSC 7 CWD reporting so the terminal can track CWD.
         if !shell.ends_with("cmd.exe") {
@@ -207,12 +224,7 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
         let mut cmd = CommandBuilder::new(shell);
-        let dir = match cwd.filter(|s| !s.is_empty()) {
-            Some(d) => d.to_string(),
-            None => std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
-        };
-
-        setup_cwd_and_osc7(&mut cmd, shell, &dir);
+        setup_cwd_and_osc7(&mut cmd, shell, cwd.filter(|s| !s.is_empty()));
 
         let mut child = pair
             .slave
