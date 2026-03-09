@@ -91,6 +91,101 @@ function updateWindow(
   };
 }
 
+interface RemovePaneResult {
+  /** Updated tab states. null means the app should close (last tab removed). */
+  states: TabState[] | null;
+  /** If set, the active tab was removed and should switch to this tab ID. */
+  newActiveTabId?: string;
+}
+
+/**
+ * Pure function: remove a pane from the tree, cascading to window/tab removal
+ * if it was the last pane in a window or the last window in a tab.
+ */
+function removePaneFromState(
+  prev: TabState[],
+  tabId: string,
+  windowId: string,
+  paneId: string,
+  activeTabId: string,
+): RemovePaneResult {
+  const tabState = prev.find((s) => s.tab.id === tabId);
+  if (!tabState) return { states: prev };
+
+  const win = tabState.windows.find((ws) => ws.window.id === windowId);
+  if (!win) return { states: prev };
+
+  const newTree = closePane(win.paneTree, paneId);
+
+  if (newTree === null) {
+    const remainingWindows = tabState.windows.filter(
+      (ws) => ws.window.id !== windowId,
+    );
+
+    if (remainingWindows.length === 0) {
+      const remaining = prev.filter((s) => s.tab.id !== tabId);
+      if (remaining.length === 0) {
+        return { states: null };
+      }
+      const newActive =
+        activeTabId === tabId
+          ? remaining[Math.max(0, remaining.length - 1)].tab.id
+          : undefined;
+      return { states: remaining, newActiveTabId: newActive };
+    }
+
+    const newActiveWindowId =
+      tabState.activeWindowId === windowId
+        ? remainingWindows[Math.max(0, remainingWindows.length - 1)].window.id
+        : tabState.activeWindowId;
+
+    return {
+      states: prev.map((s) =>
+        s.tab.id === tabId
+          ? {
+              ...s,
+              windows: remainingWindows,
+              activeWindowId: newActiveWindowId,
+            }
+          : s,
+      ),
+    };
+  }
+
+  // Pane removed but window survives — preserve activePaneId when possible
+  const leaves = allLeaves(newTree);
+  const newActivePaneId = leaves.some((l) => l.id === win.activePaneId)
+    ? win.activePaneId
+    : leaves[0].id;
+
+  return {
+    states: prev.map((s) =>
+      s.tab.id === tabId
+        ? updateWindow(s, windowId, (ws) => ({
+            ...ws,
+            paneTree: newTree,
+            activePaneId: newActivePaneId,
+          }))
+        : s,
+    ),
+  };
+}
+
+function applyRemovePaneResult(
+  result: RemovePaneResult,
+  prev: TabState[],
+  setActiveTabId: (id: string) => void,
+): TabState[] {
+  if (result.states === null) {
+    closeAppWindow();
+    return prev;
+  }
+  if (result.newActiveTabId) {
+    setActiveTabId(result.newActiveTabId);
+  }
+  return result.states;
+}
+
 function App() {
   const nextTabNum = useRef(2);
 
@@ -122,6 +217,15 @@ function App() {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
 
+  const updateTab = useCallback(
+    (tabId: string, updater: (s: TabState) => TabState) => {
+      setTabStates((prev) =>
+        prev.map((s) => (s.tab.id === tabId ? updater(s) : s)),
+      );
+    },
+    [],
+  );
+
   // Set up global PTY event listeners once
   useEffect(() => {
     if (initedRef.current) return;
@@ -150,72 +254,19 @@ function App() {
         termRefs.current.delete(mapping.paneId);
         handleTitleChange(mapping.paneId, "");
 
-        setTabStates((prev) => {
-          const tabState = prev.find((s) => s.tab.id === mapping.tabId);
-          if (!tabState) return prev;
-
-          const win = tabState.windows.find(
-            (ws) => ws.window.id === mapping.windowId,
-          );
-          if (!win) return prev;
-
-          const newTree = closePane(win.paneTree, mapping.paneId);
-
-          if (newTree === null) {
-            // Last pane in window - remove window
-            const remainingWindows = tabState.windows.filter(
-              (ws) => ws.window.id !== mapping.windowId,
-            );
-
-            if (remainingWindows.length === 0) {
-              // Last window in tab - remove tab
-              const remaining = prev.filter((s) => s.tab.id !== mapping.tabId);
-              if (remaining.length === 0) {
-                closeAppWindow();
-                return prev;
-              }
-
-              if (activeTabIdRef.current === mapping.tabId) {
-                const newActiveIdx = Math.max(0, remaining.length - 1);
-                setActiveTabId(remaining[newActiveIdx].tab.id);
-              }
-              return remaining;
-            }
-
-            // Window removed but tab survives
-            const newActiveWindowId =
-              tabState.activeWindowId === mapping.windowId
-                ? remainingWindows[Math.max(0, remainingWindows.length - 1)]
-                    .window.id
-                : tabState.activeWindowId;
-
-            return prev.map((s) =>
-              s.tab.id === mapping.tabId
-                ? {
-                    ...s,
-                    windows: remainingWindows,
-                    activeWindowId: newActiveWindowId,
-                  }
-                : s,
-            );
-          }
-
-          // Pane removed but window survives
-          const leaves = allLeaves(newTree);
-          const newActivePaneId = leaves.some((l) => l.id === win.activePaneId)
-            ? win.activePaneId
-            : leaves[0].id;
-
-          return prev.map((s) =>
-            s.tab.id === mapping.tabId
-              ? updateWindow(s, mapping.windowId, (ws) => ({
-                  ...ws,
-                  paneTree: newTree,
-                  activePaneId: newActivePaneId,
-                }))
-              : s,
-          );
-        });
+        setTabStates((prev) =>
+          applyRemovePaneResult(
+            removePaneFromState(
+              prev,
+              mapping.tabId,
+              mapping.windowId,
+              mapping.paneId,
+              activeTabIdRef.current,
+            ),
+            prev,
+            setActiveTabId,
+          ),
+        );
       });
 
       unlistenRefs.current = [unlistenOutput, unlistenExit];
@@ -255,15 +306,11 @@ function App() {
             spawningPanes.current.delete(paneId);
             ptyToPane.current.set(ptyId, { tabId, windowId, paneId });
             paneToPty.current.set(paneId, ptyId);
-            setTabStates((prev) =>
-              prev.map((s) =>
-                s.tab.id === tabId
-                  ? updateWindow(s, windowId, (w) => ({
-                      ...w,
-                      paneTree: updateLeafPtyId(w.paneTree, paneId, ptyId),
-                    }))
-                  : s,
-              ),
+            updateTab(tabId, (s) =>
+              updateWindow(s, windowId, (w) => ({
+                ...w,
+                paneTree: updateLeafPtyId(w.paneTree, paneId, ptyId),
+              })),
             );
 
             const cur = termRefs.current.get(paneId);
@@ -282,7 +329,7 @@ function App() {
         }
       }
     }
-  }, [tabStates]);
+  }, [tabStates, updateTab]);
 
   const handlePaneData = useCallback((paneId: string, data: string) => {
     const ptyId = paneToPty.current.get(paneId);
@@ -312,10 +359,9 @@ function App() {
     [],
   );
 
-  const handlePaneFocus = useCallback((paneId: string) => {
-    setTabStates((prev) =>
-      prev.map((s) => {
-        if (s.tab.id !== activeTabIdRef.current) return s;
+  const handlePaneFocus = useCallback(
+    (paneId: string) => {
+      updateTab(activeTabIdRef.current, (s) => {
         const win = findWindowContainingPane(s.windows, paneId);
         if (!win) return s;
         return {
@@ -327,139 +373,122 @@ function App() {
               : ws,
           ),
         };
-      }),
-    );
-  }, []);
+      });
+    },
+    [updateTab],
+  );
 
   const handleDividerDrag = useCallback(
     (splitNodeId: string, delta: number) => {
-      setTabStates((prev) =>
-        prev.map((s) => {
-          if (s.tab.id !== activeTabIdRef.current) return s;
+      updateTab(activeTabIdRef.current, (s) => ({
+        ...s,
+        windows: s.windows.map((ws) => {
+          const split = findSplitNode(ws.paneTree, splitNodeId);
+          if (!split) return ws;
           return {
-            ...s,
-            windows: s.windows.map((ws) => {
-              const split = findSplitNode(ws.paneTree, splitNodeId);
-              if (!split) return ws;
-              return {
-                ...ws,
-                paneTree: updateRatio(
-                  ws.paneTree,
-                  splitNodeId,
-                  split.ratio + delta,
-                ),
-              };
-            }),
+            ...ws,
+            paneTree: updateRatio(
+              ws.paneTree,
+              splitNodeId,
+              split.ratio + delta,
+            ),
           };
         }),
-      );
+      }));
     },
-    [],
+    [updateTab],
   );
 
-  const handlePrefixAction = useCallback((action: PrefixAction) => {
-    const currentTabId = activeTabIdRef.current;
-    const currentTab = tabStatesRef.current.find(
-      (s) => s.tab.id === currentTabId,
-    );
-    if (!currentTab) return;
+  const handlePrefixAction = useCallback(
+    (action: PrefixAction) => {
+      const currentTabId = activeTabIdRef.current;
+      const currentTab = tabStatesRef.current.find(
+        (s) => s.tab.id === currentTabId,
+      );
+      if (!currentTab) return;
 
-    const activeWin = getActiveWindow(currentTab);
-    if (!activeWin && action !== "cancel" && action !== "toggle-sidebar")
-      return;
+      const activeWin = getActiveWindow(currentTab);
+      if (!activeWin && action !== "cancel" && action !== "toggle-sidebar")
+        return;
 
-    switch (action) {
-      case "split-horizontal":
-      case "split-vertical": {
-        const direction =
-          action === "split-horizontal" ? "horizontal" : "vertical";
-        const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
-        const cwdPromise =
-          activePtyId != null
-            ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
-                () => undefined,
-              )
-            : Promise.resolve(undefined);
-        cwdPromise.then((cwd) => {
-          const tab = tabStatesRef.current.find(
-            (s) => s.tab.id === currentTabId,
+      switch (action) {
+        case "split-horizontal":
+        case "split-vertical": {
+          const direction =
+            action === "split-horizontal" ? "horizontal" : "vertical";
+          const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
+          const cwdPromise =
+            activePtyId != null
+              ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
+                  () => undefined,
+                )
+              : Promise.resolve(undefined);
+          cwdPromise.then((cwd) => {
+            const tab = tabStatesRef.current.find(
+              (s) => s.tab.id === currentTabId,
+            );
+            if (!tab) return;
+            const win = getActiveWindow(tab);
+            if (!win) return;
+            const result = splitPane(
+              win.paneTree,
+              win.activePaneId,
+              direction,
+              cwd,
+            );
+            if (result) {
+              updateTab(currentTabId, (s) =>
+                updateWindow(s, win.window.id, (ws) => ({
+                  ...ws,
+                  paneTree: result.tree,
+                  activePaneId: result.newPaneId,
+                })),
+              );
+            }
+          });
+          break;
+        }
+        case "navigate-left":
+        case "navigate-right":
+        case "navigate-up":
+        case "navigate-down": {
+          const dir = action.replace("navigate-", "") as
+            | "left"
+            | "right"
+            | "up"
+            | "down";
+          const target = findAdjacentPane(
+            activeWin!.paneTree,
+            activeWin!.activePaneId,
+            dir,
           );
-          if (!tab) return;
-          const win = getActiveWindow(tab);
-          if (!win) return;
-          const result = splitPane(
-            win.paneTree,
-            win.activePaneId,
-            direction,
-            cwd,
-          );
-          if (result) {
-            setTabStates((prev) =>
-              prev.map((s) =>
-                s.tab.id === currentTabId
-                  ? updateWindow(s, win.window.id, (ws) => ({
-                      ...ws,
-                      paneTree: result.tree,
-                      activePaneId: result.newPaneId,
-                    }))
-                  : s,
-              ),
+          if (target) {
+            updateTab(currentTabId, (s) =>
+              updateWindow(s, activeWin!.window.id, (ws) => ({
+                ...ws,
+                activePaneId: target,
+              })),
             );
           }
-        });
-        break;
-      }
-      case "navigate-left":
-      case "navigate-right":
-      case "navigate-up":
-      case "navigate-down": {
-        const dirMap = {
-          "navigate-left": "left",
-          "navigate-right": "right",
-          "navigate-up": "up",
-          "navigate-down": "down",
-        } as const;
-        const dir = dirMap[action];
-        const target = findAdjacentPane(
-          activeWin!.paneTree,
-          activeWin!.activePaneId,
-          dir,
-        );
-        if (target) {
-          setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === currentTabId
-                ? updateWindow(s, activeWin!.window.id, (ws) => ({
-                    ...ws,
-                    activePaneId: target,
-                  }))
-                : s,
-            ),
-          );
+          break;
         }
-        break;
-      }
-      case "resize-left":
-      case "resize-right":
-      case "resize-up":
-      case "resize-down": {
-        const resizeDirMap = {
-          "resize-left": "left",
-          "resize-right": "right",
-          "resize-up": "up",
-          "resize-down": "down",
-        } as const;
-        const dir = resizeDirMap[action];
-        const info = findParentSplit(
-          activeWin!.paneTree,
-          activeWin!.activePaneId,
-          dir,
-        );
-        if (info) {
-          setTabStates((prev) =>
-            prev.map((s) => {
-              if (s.tab.id !== currentTabId) return s;
-              return updateWindow(s, activeWin!.window.id, (ws) => {
+        case "resize-left":
+        case "resize-right":
+        case "resize-up":
+        case "resize-down": {
+          const dir = action.replace("resize-", "") as
+            | "left"
+            | "right"
+            | "up"
+            | "down";
+          const info = findParentSplit(
+            activeWin!.paneTree,
+            activeWin!.activePaneId,
+            dir,
+          );
+          if (info) {
+            updateTab(currentTabId, (s) =>
+              updateWindow(s, activeWin!.window.id, (ws) => {
                 const split = findSplitNode(ws.paneTree, info.splitId);
                 if (!split) return ws;
                 return {
@@ -470,184 +499,120 @@ function App() {
                     split.ratio + info.delta,
                   ),
                 };
-              });
-            }),
-          );
-        }
-        break;
-      }
-      case "close-pane": {
-        const leaves = allLeaves(activeWin!.paneTree);
-        const activePaneId = activeWin!.activePaneId;
-        const activeLeaf = leaves.find((l) => l.id === activePaneId);
-
-        // Close the PTY for this pane
-        if (activeLeaf?.ptyId != null) {
-          invoke("close_pty", { id: activeLeaf.ptyId });
-          ptyToPane.current.delete(activeLeaf.ptyId);
-          paneToPty.current.delete(activePaneId);
-        }
-        termRefs.current.delete(activePaneId);
-
-        const newTree = closePane(activeWin!.paneTree, activePaneId);
-        if (newTree === null) {
-          // Last pane in window - remove window
-          const remainingWindows = currentTab.windows.filter(
-            (ws) => ws.window.id !== activeWin!.window.id,
-          );
-
-          if (remainingWindows.length === 0) {
-            // Last window in tab - close the tab
-            const remaining = tabStatesRef.current.filter(
-              (s) => s.tab.id !== currentTabId,
+              }),
             );
-            if (remaining.length === 0) {
-              closeAppWindow();
-              return;
-            }
-            setTabStates(remaining);
-            if (activeTabIdRef.current === currentTabId) {
-              setActiveTabId(
-                remaining[Math.max(0, remaining.length - 1)].tab.id,
-              );
-            }
-          } else {
-            const newActiveWindowId =
-              remainingWindows[Math.max(0, remainingWindows.length - 1)].window
-                .id;
-            setTabStates((prev) =>
-              prev.map((s) =>
-                s.tab.id === currentTabId
-                  ? {
-                      ...s,
-                      windows: remainingWindows,
-                      activeWindowId: newActiveWindowId,
-                    }
-                  : s,
+          }
+          break;
+        }
+        case "close-pane": {
+          const activePaneId = activeWin!.activePaneId;
+          const activeLeaf = allLeaves(activeWin!.paneTree).find(
+            (l) => l.id === activePaneId,
+          );
+
+          if (activeLeaf?.ptyId != null) {
+            invoke("close_pty", { id: activeLeaf.ptyId });
+            ptyToPane.current.delete(activeLeaf.ptyId);
+            paneToPty.current.delete(activePaneId);
+          }
+          termRefs.current.delete(activePaneId);
+          handleTitleChange(activePaneId, "");
+
+          setTabStates((prev) =>
+            applyRemovePaneResult(
+              removePaneFromState(
+                prev,
+                currentTabId,
+                activeWin!.window.id,
+                activePaneId,
+                activeTabIdRef.current,
               ),
+              prev,
+              setActiveTabId,
+            ),
+          );
+          break;
+        }
+        case "toggle-sidebar":
+          setSidebarVisible((v) => !v);
+          break;
+        case "create-window": {
+          const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
+          const cwdPromise =
+            activePtyId != null
+              ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
+                  () => undefined,
+                )
+              : Promise.resolve(undefined);
+          cwdPromise.then((cwd) => {
+            const tab = tabStatesRef.current.find(
+              (s) => s.tab.id === currentTabId,
             );
+            if (!tab) return;
+            const newWin = createWindowState(
+              `Window ${tab.nextWindowNum}`,
+              cwd,
+            );
+            updateTab(currentTabId, (s) => ({
+              ...s,
+              windows: [...s.windows, newWin],
+              activeWindowId: newWin.window.id,
+              nextWindowNum: s.nextWindowNum + 1,
+            }));
+          });
+          break;
+        }
+        case "next-window":
+        case "prev-window": {
+          const windows = currentTab.windows;
+          if (windows.length <= 1) break;
+          const currentIdx = windows.findIndex(
+            (ws) => ws.window.id === currentTab.activeWindowId,
+          );
+          const step = action === "next-window" ? 1 : -1;
+          const nextIdx = (currentIdx + step + windows.length) % windows.length;
+          updateTab(currentTabId, (s) => ({
+            ...s,
+            activeWindowId: windows[nextIdx].window.id,
+          }));
+          break;
+        }
+        case "select-pane-1":
+        case "select-pane-2":
+        case "select-pane-3":
+        case "select-pane-4":
+        case "select-pane-5":
+        case "select-pane-6":
+        case "select-pane-7":
+        case "select-pane-8":
+        case "select-pane-9": {
+          const idx = parseInt(action.slice(-1)) - 1;
+          const allPanes: { paneId: string; windowId: string }[] = [];
+          for (const ws of currentTab.windows) {
+            for (const leaf of allLeaves(ws.paneTree)) {
+              allPanes.push({ paneId: leaf.id, windowId: ws.window.id });
+            }
           }
-        } else {
-          const newLeaves = allLeaves(newTree);
-          const newActivePaneId = newLeaves[0].id;
-          setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === currentTabId
-                ? updateWindow(s, activeWin!.window.id, (ws) => ({
-                    ...ws,
-                    paneTree: newTree,
-                    activePaneId: newActivePaneId,
-                  }))
-                : s,
-            ),
-          );
-        }
-        break;
-      }
-      case "toggle-sidebar":
-        setSidebarVisible((v) => !v);
-        break;
-      case "create-window": {
-        const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
-        const cwdPromise =
-          activePtyId != null
-            ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
-                () => undefined,
-              )
-            : Promise.resolve(undefined);
-        cwdPromise.then((cwd) => {
-          const tab = tabStatesRef.current.find(
-            (s) => s.tab.id === currentTabId,
-          );
-          if (!tab) return;
-          const newWin = createWindowState(`Window ${tab.nextWindowNum}`, cwd);
-          setTabStates((prev) =>
-            prev.map((s) =>
-              s.tab.id === currentTabId
-                ? {
-                    ...s,
-                    windows: [...s.windows, newWin],
-                    activeWindowId: newWin.window.id,
-                    nextWindowNum: s.nextWindowNum + 1,
-                  }
-                : s,
-            ),
-          );
-        });
-        break;
-      }
-      case "next-window": {
-        const windows = currentTab.windows;
-        if (windows.length <= 1) break;
-        const currentIdx = windows.findIndex(
-          (ws) => ws.window.id === currentTab.activeWindowId,
-        );
-        const nextIdx = (currentIdx + 1) % windows.length;
-        setTabStates((prev) =>
-          prev.map((s) =>
-            s.tab.id === currentTabId
-              ? { ...s, activeWindowId: windows[nextIdx].window.id }
-              : s,
-          ),
-        );
-        break;
-      }
-      case "prev-window": {
-        const windows = currentTab.windows;
-        if (windows.length <= 1) break;
-        const currentIdx = windows.findIndex(
-          (ws) => ws.window.id === currentTab.activeWindowId,
-        );
-        const prevIdx = (currentIdx - 1 + windows.length) % windows.length;
-        setTabStates((prev) =>
-          prev.map((s) =>
-            s.tab.id === currentTabId
-              ? { ...s, activeWindowId: windows[prevIdx].window.id }
-              : s,
-          ),
-        );
-        break;
-      }
-      case "select-pane-1":
-      case "select-pane-2":
-      case "select-pane-3":
-      case "select-pane-4":
-      case "select-pane-5":
-      case "select-pane-6":
-      case "select-pane-7":
-      case "select-pane-8":
-      case "select-pane-9": {
-        const idx = parseInt(action.slice(-1)) - 1;
-        // Collect all leaves across all windows with their window reference
-        const allPanes: { paneId: string; windowId: string }[] = [];
-        for (const ws of currentTab.windows) {
-          for (const leaf of allLeaves(ws.paneTree)) {
-            allPanes.push({ paneId: leaf.id, windowId: ws.window.id });
+          if (idx < allPanes.length) {
+            const target = allPanes[idx];
+            updateTab(currentTabId, (s) => ({
+              ...s,
+              activeWindowId: target.windowId,
+              windows: s.windows.map((ws) =>
+                ws.window.id === target.windowId
+                  ? { ...ws, activePaneId: target.paneId }
+                  : ws,
+              ),
+            }));
           }
+          break;
         }
-        if (idx < allPanes.length) {
-          const target = allPanes[idx];
-          setTabStates((prev) =>
-            prev.map((s) => {
-              if (s.tab.id !== currentTabId) return s;
-              return {
-                ...s,
-                activeWindowId: target.windowId,
-                windows: s.windows.map((ws) =>
-                  ws.window.id === target.windowId
-                    ? { ...ws, activePaneId: target.paneId }
-                    : ws,
-                ),
-              };
-            }),
-          );
-        }
-        break;
+        case "cancel":
+          break;
       }
-      case "cancel":
-        break;
-    }
-  }, []);
+    },
+    [handleTitleChange, updateTab],
+  );
 
   const { isPrefixMode } = usePrefixKey(handlePrefixAction);
 
@@ -693,13 +658,12 @@ function App() {
     setTabStates(remaining);
   }, []);
 
-  const handleRenameTab = useCallback((tabId: string, title: string) => {
-    setTabStates((prev) =>
-      prev.map((s) =>
-        s.tab.id === tabId ? { ...s, tab: { ...s.tab, title } } : s,
-      ),
-    );
-  }, []);
+  const handleRenameTab = useCallback(
+    (tabId: string, title: string) => {
+      updateTab(tabId, (s) => ({ ...s, tab: { ...s.tab, title } }));
+    },
+    [updateTab],
+  );
 
   const handleReorderTabs = useCallback((reordered: Tab[]) => {
     setTabStates((prev) => {
