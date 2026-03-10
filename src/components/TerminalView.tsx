@@ -168,6 +168,7 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       // Container-relative coords (for compositionView with position: absolute)
       let imeAnchorLocal: { left: string; top: string } | null = null;
       let imeAnchorTimer: ReturnType<typeof setTimeout> | undefined;
+      let isComposing = false;
 
       const captureImeAnchor = () => {
         if (textarea) {
@@ -180,17 +181,28 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         }
       };
 
-      const trackImeAnchor = (e: KeyboardEvent) => {
-        // keyCode 229 = IME composition character; skip to avoid capturing
-        // the cursor position that TUI rendering may have moved to.
-        if (e.keyCode !== 229) {
+      const scheduleCapture = () => {
+        if (!isComposing) {
           clearTimeout(imeAnchorTimer);
-          // Wait for PTY round-trip + TUI re-render before capturing.
           imeAnchorTimer = setTimeout(captureImeAnchor, 50);
         }
       };
 
+      const trackImeAnchor = (e: KeyboardEvent) => {
+        // keyCode 229 = IME composition character; skip to avoid capturing
+        // the cursor position that TUI rendering may have moved to.
+        if (e.keyCode !== 229) {
+          scheduleCapture();
+        }
+      };
+
+      // Track cursor movement so the IME anchor updates even without
+      // non-IME keystrokes (e.g. after confirming Japanese text, clicking,
+      // or terminal output moving the cursor).
+      terminal.onCursorMove(scheduleCapture);
+
       const lockImePosition = () => {
+        isComposing = true;
         // Stop any pending capture — the anchor must stay stable during
         // composition.
         clearTimeout(imeAnchorTimer);
@@ -226,9 +238,13 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       };
 
       const unlockImePosition = () => {
+        isComposing = false;
         textarea?.classList.remove("ime-composing");
         compositionView?.classList.remove("ime-composing");
         compositionView?.style.removeProperty("max-width");
+        // Recapture after composition ends so the next composition
+        // starts at the updated cursor position.
+        scheduleCapture();
       };
 
       textarea?.addEventListener("keydown", trackImeAnchor);
