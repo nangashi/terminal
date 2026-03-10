@@ -139,7 +139,7 @@ impl PsuedoCon {
                 ptr::null_mut(),
                 ptr::null_mut(),
                 0,
-                EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | 0x0800_0000, // CREATE_NO_WINDOW
+                EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
                 cmd.environment_block().as_mut_slice().as_mut_ptr() as *mut _,
                 cwd.as_ref()
                     .map(|c| c.as_slice().as_ptr())
