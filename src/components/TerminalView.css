@@ -10,7 +10,6 @@
  */
 
 .xterm .xterm-helper-textarea.ime-composing {
-  position: fixed !important;
   left: var(--ime-lock-left) !important;
   top: var(--ime-lock-top) !important;
 }

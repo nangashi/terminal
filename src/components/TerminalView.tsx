@@ -163,18 +163,16 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       const compositionView =
         container.querySelector<HTMLElement>(".composition-view");
 
-      // Viewport-relative coords (for textarea with position: fixed)
-      let imeAnchorViewport: { left: number; top: number } | null = null;
-      // Container-relative coords (for compositionView with position: absolute)
-      let imeAnchorLocal: { left: string; top: string } | null = null;
+      // Container-relative coords (position: absolute within xterm screen).
+      // Used for both textarea and composition-view since they share the
+      // same coordinate space.
+      let imeAnchor: { left: string; top: string } | null = null;
       let imeAnchorTimer: ReturnType<typeof setTimeout> | undefined;
       let isComposing = false;
 
       const captureImeAnchor = () => {
         if (textarea) {
-          const rect = textarea.getBoundingClientRect();
-          imeAnchorViewport = { left: rect.left, top: rect.top };
-          imeAnchorLocal = {
+          imeAnchor = {
             left: textarea.style.left,
             top: textarea.style.top,
           };
@@ -207,15 +205,24 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         // composition.
         clearTimeout(imeAnchorTimer);
 
+        // Use pre-captured anchor, or snapshot the current textarea position.
+        // Both textarea and composition-view are position: absolute siblings
+        // in the xterm screen, so they share the same coordinate space.
+        const pos = imeAnchor ?? {
+          left: textarea?.style.left ?? "0px",
+          top: textarea?.style.top ?? "0px",
+        };
+
+        // Guard against empty strings (e.g. first composition before xterm.js
+        // has positioned the textarea).  An empty CSS variable value resolves
+        // to `unset !important` which overrides xterm.js inline styles and
+        // pushes elements to position auto.
+        const safeLeft = pos.left || "0px";
+        const safeTop = pos.top || "0px";
+
         if (textarea) {
-          const pos =
-            imeAnchorViewport ??
-            (() => {
-              const r = textarea.getBoundingClientRect();
-              return { left: r.left, top: r.top };
-            })();
-          textarea.style.setProperty("--ime-lock-left", `${pos.left}px`);
-          textarea.style.setProperty("--ime-lock-top", `${pos.top}px`);
+          textarea.style.setProperty("--ime-lock-left", safeLeft);
+          textarea.style.setProperty("--ime-lock-top", safeTop);
           textarea.classList.add("ime-composing");
           // Match the terminal font so the IME system calculates character
           // positions correctly.  xterm.js only sets font on composition-view,
@@ -226,18 +233,14 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
           textarea.style.fontSize = `${opts.fontSize ?? 14}px`;
         }
         if (compositionView) {
-          const pos = imeAnchorLocal ?? {
-            left: compositionView.style.left,
-            top: compositionView.style.top,
-          };
-          compositionView.style.setProperty("--ime-lock-left", pos.left);
-          compositionView.style.setProperty("--ime-lock-top", pos.top);
+          compositionView.style.setProperty("--ime-lock-left", safeLeft);
+          compositionView.style.setProperty("--ime-lock-top", safeTop);
           compositionView.classList.add("ime-composing");
 
           // Constrain width so composition text wraps within the pane
           const parent = compositionView.offsetParent as HTMLElement | null;
           if (parent) {
-            const leftPx = parseFloat(pos.left) || 0;
+            const leftPx = parseFloat(safeLeft) || 0;
             const maxW = parent.clientWidth - leftPx;
             compositionView.style.maxWidth = `${Math.max(maxW, 0)}px`;
           }
