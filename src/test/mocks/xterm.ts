@@ -14,7 +14,6 @@ export function setupXtermMocks() {
       onData = vi.fn();
       onResize = vi.fn();
       onTitleChange = vi.fn();
-      onCursorMove = vi.fn();
       attachCustomKeyEventHandler = vi.fn();
       dispose = vi.fn();
       focus = vi.fn();

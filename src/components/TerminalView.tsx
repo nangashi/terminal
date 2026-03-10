@@ -149,76 +149,29 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       // xterm.js syncs the hidden textarea to the terminal cursor on every
       // cursor move (_syncTextArea).  TUI apps like Claude Code move the cursor
       // around to render UI elements (status bars, etc.), which drags the
-      // textarea along.  If the user starts IME composition at that point the
-      // candidate window appears at the wrong position.
+      // textarea along.  During IME composition this causes the candidate
+      // window and composition text to jump.
       //
-      // To mitigate this we record the textarea position after a short delay
-      // following each non-IME keystroke.  The delay (50ms) allows the PTY
-      // round-trip and TUI re-render to complete, so the captured position
-      // reflects where the cursor settled after the TUI processed the input
-      // — not where it was during rendering.
+      // At compositionstart we snapshot textarea.style.left/top (the position
+      // xterm.js last synced) and lock both the textarea and composition-view
+      // there via CSS custom properties + !important until compositionend.
       const textarea = container.querySelector<HTMLTextAreaElement>(
         ".xterm-helper-textarea",
       );
       const compositionView =
         container.querySelector<HTMLElement>(".composition-view");
 
-      // Container-relative coords (position: absolute within xterm screen).
-      // Used for both textarea and composition-view since they share the
-      // same coordinate space.
-      let imeAnchor: { left: string; top: string } | null = null;
-      let imeAnchorTimer: ReturnType<typeof setTimeout> | undefined;
-      let isComposing = false;
-
-      const captureImeAnchor = () => {
-        if (textarea) {
-          imeAnchor = {
-            left: textarea.style.left,
-            top: textarea.style.top,
-          };
-        }
-      };
-
-      const scheduleCapture = () => {
-        if (!isComposing) {
-          clearTimeout(imeAnchorTimer);
-          imeAnchorTimer = setTimeout(captureImeAnchor, 50);
-        }
-      };
-
-      const trackImeAnchor = (e: KeyboardEvent) => {
-        // keyCode 229 = IME composition character; skip to avoid capturing
-        // the cursor position that TUI rendering may have moved to.
-        if (e.keyCode !== 229) {
-          scheduleCapture();
-        }
-      };
-
-      // Track cursor movement so the IME anchor updates even without
-      // non-IME keystrokes (e.g. after confirming Japanese text, clicking,
-      // or terminal output moving the cursor).
-      terminal.onCursorMove(scheduleCapture);
-
       const lockImePosition = () => {
-        isComposing = true;
-        // Stop any pending capture — the anchor must stay stable during
-        // composition.
-        clearTimeout(imeAnchorTimer);
-
-        // Use pre-captured anchor, or snapshot the current textarea position.
-        // Both textarea and composition-view are position: absolute siblings
-        // in the xterm screen, so they share the same coordinate space.
-        const pos = imeAnchor ?? {
-          left: textarea?.style.left ?? "0px",
-          top: textarea?.style.top ?? "0px",
-        };
-
-        // Guard against empty strings (e.g. first composition before xterm.js
-        // has positioned the textarea).  An empty CSS variable value resolves
-        // to `unset !important` which overrides xterm.js inline styles and
-        // pushes elements to position auto.
-        const safeLeft = pos.left || "0px";
-        const safeTop = pos.top || "0px";
+        // Always snapshot the current textarea position at compositionstart.
+        // xterm.js keeps textarea.style.left/top in sync with the cursor via
+        // _syncTextArea(), so this reflects the latest cursor location.
+        //
+        // We intentionally do NOT use a pre-captured/debounced anchor because
+        // the capture timer gets destroyed by clearTimeout when compositions
+        // happen in rapid succession (e.g. confirming text and immediately
+        // typing the next word), causing the lock position to go stale.
+        const safeLeft = textarea?.style.left || "0px";
+        const safeTop = textarea?.style.top || "0px";
 
         if (textarea) {
           textarea.style.setProperty("--ime-lock-left", safeLeft);
@@ -248,7 +201,6 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       };
 
       const unlockImePosition = () => {
-        isComposing = false;
         textarea?.classList.remove("ime-composing");
         compositionView?.classList.remove("ime-composing");
         compositionView?.style.removeProperty("max-width");
@@ -256,12 +208,8 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
           textarea.style.fontFamily = "";
           textarea.style.fontSize = "";
         }
-        // Recapture after composition ends so the next composition
-        // starts at the updated cursor position.
-        scheduleCapture();
       };
 
-      textarea?.addEventListener("keydown", trackImeAnchor);
       textarea?.addEventListener("compositionstart", lockImePosition);
       textarea?.addEventListener("compositionend", unlockImePosition);
       textarea?.addEventListener("blur", unlockImePosition);
@@ -274,8 +222,6 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
       terminalRef.current = terminal;
 
       return () => {
-        clearTimeout(imeAnchorTimer);
-        textarea?.removeEventListener("keydown", trackImeAnchor);
         textarea?.removeEventListener("compositionstart", lockImePosition);
         textarea?.removeEventListener("compositionend", unlockImePosition);
         textarea?.removeEventListener("blur", unlockImePosition);
