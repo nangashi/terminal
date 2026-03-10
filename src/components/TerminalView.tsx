@@ -217,6 +217,13 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
           textarea.style.setProperty("--ime-lock-left", `${pos.left}px`);
           textarea.style.setProperty("--ime-lock-top", `${pos.top}px`);
           textarea.classList.add("ime-composing");
+          // Match the terminal font so the IME system calculates character
+          // positions correctly.  xterm.js only sets font on composition-view,
+          // leaving the textarea in the browser's default (proportional) font.
+          // The width mismatch causes the candidate window to drift.
+          const opts = terminal.options;
+          textarea.style.fontFamily = opts.fontFamily ?? "";
+          textarea.style.fontSize = `${opts.fontSize ?? 14}px`;
         }
         if (compositionView) {
           const pos = imeAnchorLocal ?? {
@@ -242,6 +249,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         textarea?.classList.remove("ime-composing");
         compositionView?.classList.remove("ime-composing");
         compositionView?.style.removeProperty("max-width");
+        if (textarea) {
+          textarea.style.fontFamily = "";
+          textarea.style.fontSize = "";
+        }
         // Recapture after composition ends so the next composition
         // starts at the updated cursor position.
         scheduleCapture();
