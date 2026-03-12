@@ -8,10 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import {
-  writeText as clipboardWrite,
-  readText as clipboardRead,
-} from "@tauri-apps/plugin-clipboard-manager";
+import { useClipboard } from "../hooks/useClipboard";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -40,6 +37,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const clipboard = useClipboard();
+    const clipboardRef = useRef(clipboard);
+    clipboardRef.current = clipboard;
+
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
 
@@ -134,10 +135,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(
         e.preventDefault();
         const selection = terminal.getSelection();
         if (selection) {
-          clipboardWrite(selection);
+          clipboardRef.current.write(selection);
           terminal.clearSelection();
         } else {
-          clipboardRead().then((text) => {
+          clipboardRef.current.read().then((text) => {
             onDataRef.current?.(text);
           });
         }

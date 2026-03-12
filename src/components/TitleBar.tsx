@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { Tab } from "../types";
+import { useWindowControl } from "../hooks/useWindowControl";
 import "./TitleBar.css";
 
 interface TitleBarProps {
@@ -24,7 +24,7 @@ export function TitleBar({
   onReorderTabs,
   onRenameTab,
 }: TitleBarProps) {
-  const appWindow = useMemo(() => getCurrentWindow(), []);
+  const { minimize, toggleMaximize, close } = useWindowControl();
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragSourceId = useRef<string | null>(null);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export function TitleBar({
         data-tauri-drag-region
         onDoubleClick={(e) => {
           if (e.target === e.currentTarget) {
-            appWindow.toggleMaximize();
+            toggleMaximize();
           }
         }}
       >
@@ -196,7 +196,7 @@ export function TitleBar({
         <button
           className="titlebar-btn"
           title="Minimize"
-          onClick={() => appWindow.minimize()}
+          onClick={() => minimize()}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <path
@@ -211,7 +211,7 @@ export function TitleBar({
         <button
           className="titlebar-btn"
           title="Maximize"
-          onClick={() => appWindow.toggleMaximize()}
+          onClick={() => toggleMaximize()}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <rect
@@ -229,7 +229,7 @@ export function TitleBar({
         <button
           className="titlebar-btn titlebar-btn-close"
           title="Close"
-          onClick={() => appWindow.close()}
+          onClick={() => close()}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <path
