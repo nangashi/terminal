@@ -8,5 +8,98 @@
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "error"
   },
+  "overrides": [
+    {
+      "files": ["src/types.ts", "src/constants.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "./lib/*",
+                  "./hooks/*",
+                  "./components/*",
+                  "./App"
+                ],
+                "message": "Types/Constants layer must have zero project dependencies"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/lib/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "message": "Lib layer must be pure functions (no React)"
+              },
+              {
+                "name": "react-dom",
+                "message": "Lib layer must be pure functions (no React)"
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["@tauri-apps/*", "@tauri-apps/api/*"],
+                "message": "Lib layer must not depend on Tauri"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/hooks/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../components/*"],
+                "message": "Hooks cannot depend on Components (upper layer)"
+              },
+              {
+                "group": ["../App"],
+                "message": "Hooks cannot depend on App (upper layer)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/components/**/*.tsx", "src/components/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@tauri-apps/api", "@tauri-apps/api/*"],
+                "message": "Components must use hooks for IPC (invoke/listen/emit)"
+              },
+              {
+                "group": ["@tauri-apps/plugin-*"],
+                "message": "Components must use hooks for Tauri plugin access"
+              },
+              {
+                "group": ["../App"],
+                "message": "Components cannot depend on App (upper layer)"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
   "ignorePatterns": ["dist", "src-tauri"]
 }
