@@ -1,4 +1,10 @@
-import { PaneNode, PaneLeaf, PaneSplit, SplitDirection } from "../types";
+import {
+  PaneNode,
+  PaneLeaf,
+  PaneSplit,
+  SplitDirection,
+  NavigationDirection,
+} from "../types";
 
 export function createLeaf(initialCwd?: string): PaneLeaf {
   return { type: "leaf", id: crypto.randomUUID(), ptyId: null, initialCwd };
@@ -236,8 +242,6 @@ export function computeDividerRects(
     ];
   }
 }
-
-type NavigationDirection = "left" | "right" | "up" | "down";
 
 function rangesOverlap(
   a0: number,

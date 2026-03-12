@@ -27,3 +27,18 @@ export interface PaneSplit {
 }
 
 export type PaneNode = PaneLeaf | PaneSplit;
+
+export interface WindowState {
+  window: Window;
+  paneTree: PaneNode;
+  activePaneId: string;
+}
+
+export interface TabState {
+  tab: Tab;
+  windows: WindowState[];
+  activeWindowId: string;
+  nextWindowNum: number;
+}
+
+export type NavigationDirection = "left" | "right" | "up" | "down";

@@ -1,10 +1,25 @@
-import { PaneNode, Window } from "../types";
+import { WindowState, TabState } from "../types";
 import { createLeaf, allLeaves } from "./paneTree";
 
-export interface WindowState {
-  window: Window;
-  paneTree: PaneNode;
-  activePaneId: string;
+export type { WindowState } from "../types";
+
+export function getActiveWindow(tabState: TabState): WindowState | undefined {
+  return tabState.windows.find(
+    (ws) => ws.window.id === tabState.activeWindowId,
+  );
+}
+
+export function updateWindow(
+  tabState: TabState,
+  windowId: string,
+  updater: (ws: WindowState) => WindowState,
+): TabState {
+  return {
+    ...tabState,
+    windows: tabState.windows.map((ws) =>
+      ws.window.id === windowId ? updater(ws) : ws,
+    ),
+  };
 }
 
 export function createWindowId(): string {

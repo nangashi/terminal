@@ -9,23 +9,29 @@ import { Sidebar, PaneInfo } from "./components/Sidebar";
 import { usePrefixKey, PrefixAction } from "./hooks/usePrefixKey";
 import { usePaneMetadata } from "./hooks/usePaneMetadata";
 import { useClaudeStatus } from "./hooks/useClaudeStatus";
-import { Tab } from "./types";
+import { Tab, TabState, NavigationDirection } from "./types";
 import {
-  splitPane,
   closePane,
   allLeaves,
   updateLeafPtyId,
   updateRatio,
   findSplitNode,
-  findAdjacentPane,
-  findParentSplit,
 } from "./lib/paneTree";
 import {
   createWindowState,
+  getActiveWindow,
+  updateWindow,
   allLeavesInTab,
   findWindowContainingPane,
-  WindowState,
 } from "./lib/windowHelpers";
+import {
+  applySplit,
+  applyNavigate,
+  applyResize,
+  applyCreateWindow,
+  applySwitchWindow,
+  applySelectPane,
+} from "./lib/tabStateActions";
 import { PTY_OUTPUT_EVENT, PTY_EXIT_EVENT } from "./constants";
 import "./App.css";
 
@@ -45,13 +51,6 @@ interface PtyExit {
   id: number;
 }
 
-interface TabState {
-  tab: Tab;
-  windows: WindowState[];
-  activeWindowId: string;
-  nextWindowNum: number;
-}
-
 function closeAppWindow() {
   import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
     getCurrentWindow().close(),
@@ -69,25 +68,6 @@ function createInitialTabState(title: string): TabState {
     windows: [ws],
     activeWindowId: ws.window.id,
     nextWindowNum: 2,
-  };
-}
-
-function getActiveWindow(tabState: TabState): WindowState | undefined {
-  return tabState.windows.find(
-    (ws) => ws.window.id === tabState.activeWindowId,
-  );
-}
-
-function updateWindow(
-  tabState: TabState,
-  windowId: string,
-  updater: (ws: WindowState) => WindowState,
-): TabState {
-  return {
-    ...tabState,
-    windows: tabState.windows.map((ws) =>
-      ws.window.id === windowId ? updater(ws) : ws,
-    ),
   };
 }
 
@@ -435,21 +415,9 @@ function App() {
             if (!tab) return;
             const win = getActiveWindow(tab);
             if (!win) return;
-            const result = splitPane(
-              win.paneTree,
-              win.activePaneId,
-              direction,
-              cwd,
+            updateTab(currentTabId, (s) =>
+              applySplit(s, win.window.id, direction, cwd),
             );
-            if (result) {
-              updateTab(currentTabId, (s) =>
-                updateWindow(s, win.window.id, (ws) => ({
-                  ...ws,
-                  paneTree: result.tree,
-                  activePaneId: result.newPaneId,
-                })),
-              );
-            }
           });
           break;
         }
@@ -457,56 +425,25 @@ function App() {
         case "navigate-right":
         case "navigate-up":
         case "navigate-down": {
-          const dir = action.replace("navigate-", "") as
-            | "left"
-            | "right"
-            | "up"
-            | "down";
-          const target = findAdjacentPane(
-            activeWin!.paneTree,
-            activeWin!.activePaneId,
-            dir,
+          const dir = action.replace("navigate-", "") as NavigationDirection;
+          updateTab(currentTabId, (s) =>
+            applyNavigate(
+              s,
+              activeWin!.window.id,
+              activeWin!.activePaneId,
+              dir,
+            ),
           );
-          if (target) {
-            updateTab(currentTabId, (s) =>
-              updateWindow(s, activeWin!.window.id, (ws) => ({
-                ...ws,
-                activePaneId: target,
-              })),
-            );
-          }
           break;
         }
         case "resize-left":
         case "resize-right":
         case "resize-up":
         case "resize-down": {
-          const dir = action.replace("resize-", "") as
-            | "left"
-            | "right"
-            | "up"
-            | "down";
-          const info = findParentSplit(
-            activeWin!.paneTree,
-            activeWin!.activePaneId,
-            dir,
+          const dir = action.replace("resize-", "") as NavigationDirection;
+          updateTab(currentTabId, (s) =>
+            applyResize(s, activeWin!.window.id, activeWin!.activePaneId, dir),
           );
-          if (info) {
-            updateTab(currentTabId, (s) =>
-              updateWindow(s, activeWin!.window.id, (ws) => {
-                const split = findSplitNode(ws.paneTree, info.splitId);
-                if (!split) return ws;
-                return {
-                  ...ws,
-                  paneTree: updateRatio(
-                    ws.paneTree,
-                    info.splitId,
-                    split.ratio + info.delta,
-                  ),
-                };
-              }),
-            );
-          }
           break;
         }
         case "close-pane": {
@@ -554,32 +491,14 @@ function App() {
               (s) => s.tab.id === currentTabId,
             );
             if (!tab) return;
-            const newWin = createWindowState(
-              `Window ${tab.nextWindowNum}`,
-              cwd,
-            );
-            updateTab(currentTabId, (s) => ({
-              ...s,
-              windows: [...s.windows, newWin],
-              activeWindowId: newWin.window.id,
-              nextWindowNum: s.nextWindowNum + 1,
-            }));
+            updateTab(currentTabId, (s) => applyCreateWindow(s, cwd));
           });
           break;
         }
         case "next-window":
         case "prev-window": {
-          const windows = currentTab.windows;
-          if (windows.length <= 1) break;
-          const currentIdx = windows.findIndex(
-            (ws) => ws.window.id === currentTab.activeWindowId,
-          );
           const step = action === "next-window" ? 1 : -1;
-          const nextIdx = (currentIdx + step + windows.length) % windows.length;
-          updateTab(currentTabId, (s) => ({
-            ...s,
-            activeWindowId: windows[nextIdx].window.id,
-          }));
+          updateTab(currentTabId, (s) => applySwitchWindow(s, step as 1 | -1));
           break;
         }
         case "select-pane-1":
@@ -592,24 +511,7 @@ function App() {
         case "select-pane-8":
         case "select-pane-9": {
           const idx = parseInt(action.slice(-1)) - 1;
-          const allPanes: { paneId: string; windowId: string }[] = [];
-          for (const ws of currentTab.windows) {
-            for (const leaf of allLeaves(ws.paneTree)) {
-              allPanes.push({ paneId: leaf.id, windowId: ws.window.id });
-            }
-          }
-          if (idx < allPanes.length) {
-            const target = allPanes[idx];
-            updateTab(currentTabId, (s) => ({
-              ...s,
-              activeWindowId: target.windowId,
-              windows: s.windows.map((ws) =>
-                ws.window.id === target.windowId
-                  ? { ...ws, activePaneId: target.paneId }
-                  : ws,
-              ),
-            }));
-          }
+          updateTab(currentTabId, (s) => applySelectPane(s, idx));
           break;
         }
         case "cancel":
