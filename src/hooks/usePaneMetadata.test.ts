@@ -45,7 +45,8 @@ describe("usePaneMetadata", () => {
 
   it("handles cwd fetch failure gracefully", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_pty_cwd") return Promise.reject(new Error("PTY exited"));
+      // Tauri rejects with a plain string (not Error) for Rust errors
+      if (cmd === "get_pty_cwd") return Promise.reject("PTY exited");
       return Promise.resolve(null);
     });
 
@@ -63,7 +64,8 @@ describe("usePaneMetadata", () => {
 
   it("skips git info when cwd is null", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_pty_cwd") return Promise.reject(new Error("no cwd"));
+      // Tauri rejects with a plain string (not Error) for Rust errors
+      if (cmd === "get_pty_cwd") return Promise.reject("no cwd");
       if (cmd === "get_git_info")
         return Promise.resolve({
           repoName: "x",

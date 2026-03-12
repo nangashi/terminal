@@ -64,6 +64,7 @@ fn default_shell_windows() -> String {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn create_pty(
     app: AppHandle,
     state: State<'_, PtyManager>,
@@ -91,11 +92,13 @@ pub fn create_pty(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn write_pty(state: State<'_, PtyManager>, id: PtyId, data: String) -> Result<(), String> {
     state.write(id, data.as_bytes())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn resize_pty(
     state: State<'_, PtyManager>,
     id: PtyId,
@@ -106,11 +109,13 @@ pub fn resize_pty(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn close_pty(state: State<'_, PtyManager>, id: PtyId) -> Result<(), String> {
     state.close(id)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_pty_cwd(state: State<'_, PtyManager>, id: PtyId) -> Result<String, String> {
     // On Linux, try /proc first (works without shell integration)
     #[cfg(target_os = "linux")]
@@ -129,6 +134,7 @@ pub fn get_pty_cwd(state: State<'_, PtyManager>, id: PtyId) -> Result<String, St
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_git_info(path: String) -> Option<git::GitInfo> {
     git::get_info(std::path::Path::new(&path))
 }

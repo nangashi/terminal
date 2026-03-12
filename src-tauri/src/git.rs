@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GitInfo {
     pub repo_name: String,

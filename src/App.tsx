@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { commands } from "./bindings";
 import { TerminalHandle } from "./components/TerminalView";
 import { TitleBar } from "./components/TitleBar";
 import { PaneContainer } from "./components/PaneContainer";
@@ -278,11 +278,19 @@ function App() {
           const cols = handle?.terminal?.cols;
           const rows = handle?.terminal?.rows;
 
-          invoke<number>("create_pty", {
-            ...(cols != null && rows != null ? { cols, rows } : {}),
-            ...(leaf.initialCwd ? { cwd: leaf.initialCwd } : {}),
-          })
-            .then((ptyId) => {
+          commands
+            .createPty(cols ?? null, rows ?? null, leaf.initialCwd ?? null)
+            .then((result) => {
+              if (result.status === "error") {
+                console.error(
+                  "[App] Failed to create PTY for pane",
+                  paneId,
+                  result.error,
+                );
+                spawningPanes.current.delete(paneId);
+                return;
+              }
+              const ptyId = result.data;
               log("PTY created:", ptyId, "for pane", paneId);
               spawningPanes.current.delete(paneId);
               ptyToPane.current.set(ptyId, { tabId, windowId, paneId });
@@ -299,17 +307,9 @@ function App() {
               const curRows = cur?.terminal?.rows;
               if (curCols != null && curRows != null) {
                 if (curCols !== (cols ?? 80) || curRows !== (rows ?? 24)) {
-                  invoke("resize_pty", {
-                    id: ptyId,
-                    cols: curCols,
-                    rows: curRows,
-                  });
+                  commands.resizePty(ptyId, curCols, curRows);
                 }
               }
-            })
-            .catch((err) => {
-              console.error("[App] Failed to create PTY for pane", paneId, err);
-              spawningPanes.current.delete(paneId);
             });
         }
       }
@@ -320,7 +320,7 @@ function App() {
     const ptyId = paneToPty.current.get(paneId);
     if (ptyId == null) return;
     log("Input from pane", paneId, "ptyId:", ptyId);
-    invoke("write_pty", { id: ptyId, data });
+    commands.writePty(ptyId, data);
   }, []);
 
   const handlePaneResize = useCallback(
@@ -328,7 +328,7 @@ function App() {
       const ptyId = paneToPty.current.get(paneId);
       if (ptyId == null) return;
       log("Resize pane", paneId, "ptyId:", ptyId, cols, "x", rows);
-      invoke("resize_pty", { id: ptyId, cols, rows });
+      commands.resizePty(ptyId, cols, rows);
     },
     [],
   );
@@ -404,9 +404,9 @@ function App() {
           const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
           const cwdPromise =
             activePtyId != null
-              ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
-                  () => undefined,
-                )
+              ? commands
+                  .getPtyCwd(activePtyId)
+                  .then((r) => (r.status === "ok" ? r.data : undefined))
               : Promise.resolve(undefined);
           cwdPromise.then((cwd) => {
             const tab = tabStatesRef.current.find(
@@ -453,7 +453,7 @@ function App() {
           );
 
           if (activeLeaf?.ptyId != null) {
-            invoke("close_pty", { id: activeLeaf.ptyId });
+            commands.closePty(activeLeaf.ptyId);
             ptyToPane.current.delete(activeLeaf.ptyId);
             paneToPty.current.delete(activePaneId);
           }
@@ -482,9 +482,9 @@ function App() {
           const activePtyId = paneToPty.current.get(activeWin!.activePaneId);
           const cwdPromise =
             activePtyId != null
-              ? invoke<string>("get_pty_cwd", { id: activePtyId }).catch(
-                  () => undefined,
-                )
+              ? commands
+                  .getPtyCwd(activePtyId)
+                  .then((r) => (r.status === "ok" ? r.data : undefined))
               : Promise.resolve(undefined);
           cwdPromise.then((cwd) => {
             const tab = tabStatesRef.current.find(
@@ -539,7 +539,7 @@ function App() {
     for (const ws of ts.windows) {
       for (const leaf of allLeaves(ws.paneTree)) {
         if (leaf.ptyId != null) {
-          invoke("close_pty", { id: leaf.ptyId });
+          commands.closePty(leaf.ptyId);
           ptyToPane.current.delete(leaf.ptyId);
           paneToPty.current.delete(leaf.id);
         }

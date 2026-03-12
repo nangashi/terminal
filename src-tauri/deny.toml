@@ -20,6 +20,7 @@ ignore = [
     "RUSTSEC-2025-0081", # unic-ucd-version is unmaintained
     "RUSTSEC-2025-0098", # unic-char-property is unmaintained
     "RUSTSEC-2025-0100", # unic-char-range is unmaintained
+    "RUSTSEC-2024-0436", # paste is unmaintained (via specta)
 ]
 
 [licenses]

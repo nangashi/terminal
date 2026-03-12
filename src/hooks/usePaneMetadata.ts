@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type GitInfo } from "../bindings";
 
-export interface GitInfo {
-  repoName: string;
-  branch: string;
-  isDirty: boolean;
-}
+export type { GitInfo };
 
 export interface PaneMetadata {
   cwd: string | null;
@@ -41,20 +37,12 @@ export function usePaneMetadata(
         entries.map(async ([paneId, ptyId]) => {
           let cwd: string | null = null;
           let git: GitInfo | null = null;
-          try {
-            cwd = await invoke<string>("get_pty_cwd", { id: ptyId });
-          } catch {
-            // PTY may have exited
+          const cwdResult = await commands.getPtyCwd(ptyId);
+          if (cwdResult.status === "ok") {
+            cwd = cwdResult.data;
           }
           if (cwd) {
-            try {
-              git =
-                (await invoke<GitInfo | null>("get_git_info", {
-                  path: cwd,
-                })) ?? null;
-            } catch {
-              // git info unavailable
-            }
+            git = (await commands.getGitInfo(cwd)) ?? null;
           }
           return { paneId, cwd, git };
         }),

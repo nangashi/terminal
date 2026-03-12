@@ -6,7 +6,7 @@ dev:
     TMPDIR=/tmp pnpm tauri dev
 
 # Lint & Format checks
-lint: lint-rust lint-frontend lint-secrets
+lint: lint-rust lint-frontend lint-secrets lint-layer-boundary
 
 lint-rust:
     cargo fmt --check --manifest-path src-tauri/Cargo.toml
@@ -22,6 +22,15 @@ lint-frontend:
 
 lint-secrets:
     gitleaks detect --no-banner
+
+# Layer boundary checks (frontend boundaries enforced by oxlint no-restricted-imports)
+lint-layer-boundary:
+    @if grep -rn 'tauri::' src-tauri/src/pty/ src-tauri/src/git.rs 2>/dev/null; then echo "ERROR: Domain layer (pty/, git.rs) must not depend on tauri::" >&2; exit 1; fi
+
+# Generate TypeScript bindings from Rust commands (tauri-specta)
+generate-bindings:
+    cd src-tauri && cargo test export_typescript_bindings -- --ignored
+    TMPDIR=/tmp pnpm biome check --write src/bindings.ts
 
 # Format
 fmt:
