@@ -48,5 +48,9 @@ jobs:
         run: pnpm oxlint src/
       - name: Rust tests
         run: cd src-tauri && cargo nextest run --workspace
+      - name: Check TypeScript bindings are up-to-date
+        run: |
+          just generate-bindings
+          git diff --exit-code src/bindings.ts
       - name: Frontend tests
         run: pnpm vitest run

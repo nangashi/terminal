@@ -15,7 +15,10 @@ pre-commit:
       run: gitleaks protect --staged
 
 pre-push:
+  parallel: true
   commands:
+    check-bindings:
+      run: just generate-bindings && git diff --exit-code src/bindings.ts
     test-rust:
       run: cd src-tauri && cargo nextest run --workspace
     test-frontend:
