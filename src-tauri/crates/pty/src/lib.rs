@@ -23,6 +23,10 @@ pub struct ChildWaiter {
     process_handle: windows_sys::Win32::Foundation::HANDLE,
 }
 
+// Windows HANDLE is a kernel object handle, safe to send across threads.
+#[cfg(windows)]
+unsafe impl Send for ChildWaiter {}
+
 impl ChildWaiter {
     /// Block until the child process exits.
     ///
