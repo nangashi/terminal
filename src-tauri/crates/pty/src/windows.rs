@@ -385,6 +385,10 @@ fn quote_arg(s: &str) -> String {
             out.push('\\');
             out.push('"');
         } else {
+            // Backslashes not followed by a quote are literal — emit them as-is.
+            for _ in 0..backslashes {
+                out.push('\\');
+            }
             backslashes = 0;
             out.push(c);
         }

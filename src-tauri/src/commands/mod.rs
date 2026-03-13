@@ -106,8 +106,8 @@ pub fn create_pty(
     cwd: Option<String>,
 ) -> Result<PtyId, String> {
     let shell = default_shell();
-    let cols = cols.unwrap_or(80);
-    let rows = rows.unwrap_or(24);
+    let cols = cols.unwrap_or(80).max(10);
+    let rows = rows.unwrap_or(24).max(2);
     // TODO: 暫定デバッグログ
     debug_log(&format!(
         "create_pty: shell={shell}, cols={cols}, rows={rows}, cwd={cwd:?}"
