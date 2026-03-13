@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use pty::{Pty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -20,9 +20,20 @@ type SharedCwd = Arc<Mutex<Option<String>>>;
 type CwdMap = Arc<Mutex<HashMap<PtyId, SharedCwd>>>;
 
 struct PtyInstance {
-    master: Box<dyn MasterPty + Send>,
+    pty: Pty,
     writer: Box<dyn Write + Send>,
-    child_pid: Option<u32>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PtyManagerError {
+    #[error("PTY {0} not found")]
+    NotFound(PtyId),
+    #[error(transparent)]
+    Pty(#[from] pty::PtyError),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("lock poisoned")]
+    LockPoisoned,
 }
 
 pub struct PtyManager {
@@ -150,10 +161,10 @@ fn default_home_dir() -> String {
 ///
 /// For native shells: sets `PROMPT_COMMAND` (bash) and optionally the
 /// `ZDOTDIR` trick (zsh) to inject a `precmd` hook.
-fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, cwd: Option<&str>) {
+fn setup_cwd_and_osc7(cmd: &mut std::process::Command, shell: &str, cwd: Option<&str>) {
     if shell.ends_with("wsl.exe") {
         // On Windows with wsl.exe, use --cd to set the working directory
-        // inside the Linux filesystem.  cmd.cwd() sets the Win32
+        // inside the Linux filesystem.  cmd.current_dir() sets the Win32
         // lpCurrentDirectory which cannot represent Linux paths.
         // Default to "~" (WSL user's home) when no explicit cwd is given.
         cmd.arg("--cd");
@@ -167,7 +178,7 @@ fn setup_cwd_and_osc7(cmd: &mut CommandBuilder, shell: &str, cwd: Option<&str>) 
         cmd.arg(WSL_WRAPPER);
     } else {
         let dir = cwd.map_or_else(default_home_dir, String::from);
-        cmd.cwd(dir);
+        cmd.current_dir(dir);
         // Inject OSC 7 CWD reporting so the terminal can track CWD.
         if !shell.ends_with("cmd.exe") {
             // bash: PROMPT_COMMAND
@@ -212,62 +223,40 @@ impl PtyManager {
         cwd: Option<&str>,
         on_output: OutputCallback,
         on_exit: ExitCallback,
-    ) -> Result<PtyId, String> {
-        let pty_system = native_pty_system();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| format!("Failed to open PTY: {e}"))?;
-
-        let mut cmd = CommandBuilder::new(shell);
+    ) -> Result<PtyId, PtyManagerError> {
+        let mut cmd = std::process::Command::new(shell);
         setup_cwd_and_osc7(&mut cmd, shell, cwd.filter(|s| !s.is_empty()));
 
-        let mut child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| format!("Failed to spawn command: {e}"))?;
-
-        let child_pid = child.process_id();
-
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| format!("Failed to take writer: {e}"))?;
+        let pty = Pty::spawn(&mut cmd, PtySize { rows, cols })?;
+        let writer = pty.take_writer()?;
 
         let id = {
-            let mut next = self.next_id.lock().map_err(|e| e.to_string())?;
+            let mut next = self
+                .next_id
+                .lock()
+                .map_err(|_| PtyManagerError::LockPoisoned)?;
             let id = *next;
             *next += 1;
             id
         };
 
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("Failed to clone reader: {e}"))?;
+        let mut reader = pty.take_reader()?;
+        let waiter = pty.child_waiter()?;
 
         // Insert instance BEFORE spawning reader thread to avoid race condition
         // where the reader thread tries to remove an entry that doesn't exist yet.
-        let instance = PtyInstance {
-            master: pair.master,
-            writer,
-            child_pid,
-        };
+        let instance = PtyInstance { pty, writer };
 
         // Create shared CWD storage for this PTY
         let cwd_slot: SharedCwd = Arc::new(Mutex::new(None));
         self.cwd_map
             .lock()
-            .map_err(|e| e.to_string())?
+            .map_err(|_| PtyManagerError::LockPoisoned)?
             .insert(id, Arc::clone(&cwd_slot));
 
         self.instances
             .lock()
-            .map_err(|e| e.to_string())?
+            .map_err(|_| PtyManagerError::LockPoisoned)?
             .insert(id, instance);
 
         let instances_for_reader = Arc::clone(&self.instances);
@@ -313,7 +302,7 @@ impl PtyManager {
         // to break, which unblocks the reader and triggers on_exit.
         let instances_for_waiter = Arc::clone(&self.instances);
         thread::spawn(move || {
-            let _ = child.wait();
+            let _ = waiter.wait();
             if let Ok(mut map) = instances_for_waiter.lock() {
                 map.remove(&id);
             }
@@ -327,15 +316,16 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the PTY ID is not found or writing fails.
-    pub fn write(&self, id: PtyId, data: &[u8]) -> Result<(), String> {
-        let mut instances = self.instances.lock().map_err(|e| e.to_string())?;
+    pub fn write(&self, id: PtyId, data: &[u8]) -> Result<(), PtyManagerError> {
+        let mut instances = self
+            .instances
+            .lock()
+            .map_err(|_| PtyManagerError::LockPoisoned)?;
         let instance = instances
             .get_mut(&id)
-            .ok_or_else(|| format!("PTY {id} not found"))?;
-        instance
-            .writer
-            .write_all(data)
-            .map_err(|e| format!("Failed to write to PTY: {e}"))
+            .ok_or(PtyManagerError::NotFound(id))?;
+        instance.writer.write_all(data)?;
+        Ok(())
     }
 
     /// Resize a PTY.
@@ -343,20 +333,14 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the PTY ID is not found or resizing fails.
-    pub fn resize(&self, id: PtyId, cols: u16, rows: u16) -> Result<(), String> {
-        let instances = self.instances.lock().map_err(|e| e.to_string())?;
-        let instance = instances
-            .get(&id)
-            .ok_or_else(|| format!("PTY {id} not found"))?;
-        instance
-            .master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| format!("Failed to resize PTY: {e}"))
+    pub fn resize(&self, id: PtyId, cols: u16, rows: u16) -> Result<(), PtyManagerError> {
+        let instances = self
+            .instances
+            .lock()
+            .map_err(|_| PtyManagerError::LockPoisoned)?;
+        let instance = instances.get(&id).ok_or(PtyManagerError::NotFound(id))?;
+        instance.pty.resize(PtySize { rows, cols })?;
+        Ok(())
     }
 
     /// Get the child process PID for a PTY.
@@ -364,12 +348,13 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the PTY ID is not found or the mutex is poisoned.
-    pub fn get_child_pid(&self, id: PtyId) -> Result<Option<u32>, String> {
-        let instances = self.instances.lock().map_err(|e| e.to_string())?;
-        let instance = instances
-            .get(&id)
-            .ok_or_else(|| format!("PTY {id} not found"))?;
-        Ok(instance.child_pid)
+    pub fn get_child_pid(&self, id: PtyId) -> Result<Option<u32>, PtyManagerError> {
+        let instances = self
+            .instances
+            .lock()
+            .map_err(|_| PtyManagerError::LockPoisoned)?;
+        let instance = instances.get(&id).ok_or(PtyManagerError::NotFound(id))?;
+        Ok(Some(instance.pty.child_pid()))
     }
 
     /// Get the CWD reported by OSC 7 for a PTY.
@@ -377,12 +362,15 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the mutex is poisoned.
-    pub fn get_cwd(&self, id: PtyId) -> Result<Option<String>, String> {
-        let map = self.cwd_map.lock().map_err(|e| e.to_string())?;
+    pub fn get_cwd(&self, id: PtyId) -> Result<Option<String>, PtyManagerError> {
+        let map = self
+            .cwd_map
+            .lock()
+            .map_err(|_| PtyManagerError::LockPoisoned)?;
         let Some(slot) = map.get(&id) else {
             return Ok(None);
         };
-        let cwd = slot.lock().map_err(|e| e.to_string())?;
+        let cwd = slot.lock().map_err(|_| PtyManagerError::LockPoisoned)?;
         Ok(cwd.clone())
     }
 
@@ -391,14 +379,14 @@ impl PtyManager {
     /// # Errors
     ///
     /// Returns an error if the mutex is poisoned.
-    pub fn close(&self, id: PtyId) -> Result<(), String> {
+    pub fn close(&self, id: PtyId) -> Result<(), PtyManagerError> {
         // Dropping the PtyInstance closes the master PTY.
         // On Unix this sends SIGHUP to the child process group.
         // On Windows this closes the ConPTY, terminating attached processes.
         // Either way the reader thread will get EOF/error and call on_exit.
         self.instances
             .lock()
-            .map_err(|e| e.to_string())?
+            .map_err(|_| PtyManagerError::LockPoisoned)?
             .remove(&id);
         if let Ok(mut map) = self.cwd_map.lock() {
             map.remove(&id);
@@ -640,11 +628,17 @@ mod tests {
 
         let write_result = manager.write(9999, b"test");
         assert!(write_result.is_err());
-        assert!(write_result.unwrap_err().contains("not found"));
+        assert!(
+            matches!(&write_result, Err(PtyManagerError::NotFound(9999))),
+            "Expected NotFound, got: {write_result:?}"
+        );
 
         let resize_result = manager.resize(9999, 80, 24);
         assert!(resize_result.is_err());
-        assert!(resize_result.unwrap_err().contains("not found"));
+        assert!(
+            matches!(&resize_result, Err(PtyManagerError::NotFound(9999))),
+            "Expected NotFound, got: {resize_result:?}"
+        );
     }
 
     #[test]
@@ -672,7 +666,7 @@ mod tests {
 
         let result = manager.resize(id, 120, 40);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found"));
+        assert!(matches!(&result, Err(PtyManagerError::NotFound(_))));
     }
 
     #[test]

@@ -77,24 +77,26 @@ pub fn create_pty(
     let rows = rows.unwrap_or(24);
     let output_handle = app.clone();
     let exit_handle = app;
-    state.spawn(
-        &shell,
-        cols,
-        rows,
-        cwd.as_deref(),
-        Box::new(move |id, data| {
-            let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
-        }),
-        Box::new(move |id| {
-            let _ = exit_handle.emit(PTY_EXIT_EVENT, PtyExit { id });
-        }),
-    )
+    state
+        .spawn(
+            &shell,
+            cols,
+            rows,
+            cwd.as_deref(),
+            Box::new(move |id, data| {
+                let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
+            }),
+            Box::new(move |id| {
+                let _ = exit_handle.emit(PTY_EXIT_EVENT, PtyExit { id });
+            }),
+        )
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn write_pty(state: State<'_, PtyManager>, id: PtyId, data: String) -> Result<(), String> {
-    state.write(id, data.as_bytes())
+    state.write(id, data.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -105,13 +107,13 @@ pub fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state.resize(id, cols, rows)
+    state.resize(id, cols, rows).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn close_pty(state: State<'_, PtyManager>, id: PtyId) -> Result<(), String> {
-    state.close(id)
+    state.close(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -129,7 +131,8 @@ pub fn get_pty_cwd(state: State<'_, PtyManager>, id: PtyId) -> Result<String, St
 
     // Fall back to CWD reported via OSC 7 (works on all platforms)
     state
-        .get_cwd(id)?
+        .get_cwd(id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| "CWD not available".to_string())
 }
 
