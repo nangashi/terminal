@@ -5,6 +5,24 @@ use crate::pty::{PtyId, PtyManager};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+// TODO: 暫定デバッグログ — Windows exe で WSL シェルが起動しない問題の調査用。
+// 問題解決後に削除すること。
+pub(crate) fn debug_log(msg: &str) {
+    use std::io::Write;
+    let path = std::env::temp_dir().join("terminal-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{now}] {msg}");
+    }
+}
+
 pub const PTY_OUTPUT_EVENT: &str = "pty-output";
 pub const PTY_EXIT_EVENT: &str = "pty-exit";
 
@@ -25,7 +43,10 @@ pub struct PtyExit {
 fn default_shell() -> String {
     #[cfg(target_os = "windows")]
     {
-        return default_shell_windows();
+        let shell = default_shell_windows();
+        // TODO: 暫定デバッグログ
+        debug_log(&format!("default_shell selected: {shell}"));
+        return shell;
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -47,17 +68,29 @@ fn default_shell_windows() -> String {
         // Verify at least one WSL distribution is installed.
         // Without this, wsl.exe exists but exits immediately with an error,
         // causing flickering console windows via ConPTY.
+        // TODO: 暫定デバッグログ
+        debug_log("wsl.exe exists, checking for distributions...");
         if let Ok(output) = std::process::Command::new(wsl_path)
             .args(["--list", "--quiet"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .creation_flags(CREATE_NO_WINDOW)
             .output()
         {
+            // TODO: 暫定デバッグログ
+            let stdout_lossy = String::from_utf8_lossy(&output.stdout);
+            let stderr_lossy = String::from_utf8_lossy(&output.stderr);
+            debug_log(&format!(
+                "wsl --list --quiet: status={}, stdout={:?}, stderr={:?}",
+                output.status, stdout_lossy, stderr_lossy
+            ));
             if output.status.success() {
                 return wsl_path.to_string();
             }
+        } else {
+            // TODO: 暫定デバッグログ
+            debug_log("wsl --list --quiet: failed to execute");
         }
     }
     r"C:\Windows\System32\cmd.exe".to_string()
@@ -75,9 +108,13 @@ pub fn create_pty(
     let shell = default_shell();
     let cols = cols.unwrap_or(80);
     let rows = rows.unwrap_or(24);
+    // TODO: 暫定デバッグログ
+    debug_log(&format!(
+        "create_pty: shell={shell}, cols={cols}, rows={rows}, cwd={cwd:?}"
+    ));
     let output_handle = app.clone();
     let exit_handle = app;
-    state
+    let result = state
         .spawn(
             &shell,
             cols,
@@ -87,10 +124,15 @@ pub fn create_pty(
                 let _ = output_handle.emit(PTY_OUTPUT_EVENT, PtyOutput { id, data });
             }),
             Box::new(move |id| {
+                // TODO: 暫定デバッグログ
+                debug_log(&format!("pty-exit event fired: id={id}"));
                 let _ = exit_handle.emit(PTY_EXIT_EVENT, PtyExit { id });
             }),
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    // TODO: 暫定デバッグログ
+    debug_log(&format!("create_pty result: {result:?}"));
+    result
 }
 
 #[tauri::command]

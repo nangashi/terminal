@@ -227,6 +227,14 @@ impl PtyManager {
         let mut cmd = std::process::Command::new(shell);
         setup_cwd_and_osc7(&mut cmd, shell, cwd.filter(|s| !s.is_empty()));
 
+        // TODO: 暫定デバッグログ
+        #[allow(clippy::unnecessary_debug_formatting)]
+        crate::commands::debug_log(&format!(
+            "Pty::spawn: program={:?}, args={:?}",
+            cmd.get_program(),
+            cmd.get_args().collect::<Vec<_>>()
+        ));
+
         let pty = Pty::spawn(&mut cmd, PtySize { rows, cols })?;
         let writer = pty.take_writer()?;
 
@@ -264,11 +272,28 @@ impl PtyManager {
 
         // Spawn a thread to read PTY output
         thread::spawn(move || {
+            // TODO: 暫定デバッグログ
+            crate::commands::debug_log(&format!("PTY {id} reader thread started"));
             let mut buf = [0u8; 4096];
+            let mut total_bytes: u64 = 0;
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        // TODO: 暫定デバッグログ
+                        crate::commands::debug_log(&format!(
+                            "PTY {id} reader: EOF after {total_bytes} bytes"
+                        ));
+                        break;
+                    }
                     Ok(n) => {
+                        // TODO: 暫定デバッグログ — 最初のチャンクだけ記録
+                        if total_bytes == 0 {
+                            let preview = String::from_utf8_lossy(&buf[..n.min(200)]);
+                            crate::commands::debug_log(&format!(
+                                "PTY {id} first output ({n} bytes): {preview:?}"
+                            ));
+                        }
+                        total_bytes += n as u64;
                         if let Some(path) = extract_osc7_path(&buf[..n]) {
                             if let Ok(mut cwd) = cwd_slot.lock() {
                                 *cwd = Some(path);
@@ -280,6 +305,8 @@ impl PtyManager {
                         if e.kind() == std::io::ErrorKind::Interrupted {
                             continue;
                         }
+                        // TODO: 暫定デバッグログ
+                        crate::commands::debug_log(&format!("PTY {id} read error: {e}"));
                         eprintln!("PTY {id} read error: {e}");
                         break;
                     }

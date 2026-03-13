@@ -1,6 +1,23 @@
 use crate::{ChildWaiter, PtyError, PtySize};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+
+// TODO: 暫定デバッグログ — Windows exe で WSL シェルが起動しない問題の調査用。
+// 問題解決後に削除すること。
+fn debug_log(msg: &str) {
+    let path = std::env::temp_dir().join("terminal-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{now}] [pty] {msg}");
+    }
+}
 use windows_sys::Win32::Foundation::{
     CloseHandle, DuplicateHandle, GetLastError, DUPLICATE_SAME_ACCESS, HANDLE,
     INVALID_HANDLE_VALUE, S_OK, WAIT_OBJECT_0,
@@ -141,6 +158,8 @@ impl Pty {
 
             // Build command line as wide string
             let cmdline = build_cmdline(cmd);
+            // TODO: 暫定デバッグログ
+            debug_log(&format!("cmdline: {cmdline}"));
             let mut cmdline_wide: Vec<u16> =
                 cmdline.encode_utf16().chain(std::iter::once(0)).collect();
 
@@ -183,11 +202,17 @@ impl Pty {
             DeleteProcThreadAttributeList(attr_list);
 
             if result == 0 {
+                let err = io::Error::last_os_error();
+                // TODO: 暫定デバッグログ
+                debug_log(&format!("CreateProcessW failed: {err}"));
                 ClosePseudoConsole(hpc);
                 CloseHandle(input_write);
                 CloseHandle(output_read);
-                return Err(PtyError::Spawn(io::Error::last_os_error()));
+                return Err(PtyError::Spawn(err));
             }
+
+            // TODO: 暫定デバッグログ
+            debug_log(&format!("CreateProcessW succeeded: pid={}", pi.dwProcessId));
 
             // Close the thread handle — we only need the process handle.
             CloseHandle(pi.hThread);
