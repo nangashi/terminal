@@ -16,7 +16,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -24,7 +24,7 @@ jobs:
           shared-key: check
           cache-on-failure: true
       - uses: taiki-e/install-action@cargo-nextest
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
         with:
           install_args: "node npm:pnpm"
       - name: Install system dependencies

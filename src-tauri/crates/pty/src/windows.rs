@@ -8,8 +8,12 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
-    PSEUDOCONSOLE_RESIZE_QUIRK, PSEUDOCONSOLE_WIN32_INPUT_MODE,
 };
+
+// Undocumented ConPTY flags not exposed by windows-sys.
+// Values from wezterm/Windows Terminal source.
+const PSEUDOCONSOLE_RESIZE_QUIRK: u32 = 0x2;
+const PSEUDOCONSOLE_WIN32_INPUT_MODE: u32 = 0x4;
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess,
     InitializeProcThreadAttributeList, TerminateProcess, UpdateProcThreadAttribute,
