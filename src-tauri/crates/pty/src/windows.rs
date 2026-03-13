@@ -418,7 +418,7 @@ impl Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut bytes_read: u32 = 0;
         let ok = unsafe {
-            windows_sys::Win32::Storage::FileSystem::ReadFile(
+            windows_sys::Win32::System::IO::ReadFile(
                 self.handle,
                 buf.as_mut_ptr(),
                 buf.len() as u32,
@@ -454,7 +454,7 @@ impl Write for PipeWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut bytes_written: u32 = 0;
         let ok = unsafe {
-            windows_sys::Win32::Storage::FileSystem::WriteFile(
+            windows_sys::Win32::System::IO::WriteFile(
                 self.handle,
                 buf.as_ptr(),
                 buf.len() as u32,
