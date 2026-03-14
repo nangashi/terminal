@@ -14,19 +14,21 @@ You are a code review orchestrator. Execute the following phases in order.
 
 ### Determine scope
 
-Check `$ARGUMENTS`:
-- If it contains `full`: full-file mode (review all source files)
-- Otherwise: diff mode (review only changed files vs main branch)
+The user's arguments are: `$ARGUMENTS`
+
+**Mode decision (CRITICAL — follow exactly):**
+- If the arguments above contain the word `full` → mode = **full**. You MUST use Glob to collect files. Do NOT run `git diff`.
+- Otherwise → mode = **diff**. You MUST use `git diff` to collect files. Do NOT use Glob for file collection.
 
 ### Get file list
 
-**Diff mode:**
-Run `git diff --name-only main` via Bash. Filter to only these extensions: `.ts`, `.tsx`, `.rs`, `.css`. Exclude test files (`*.test.ts`, `*.test.tsx`).
+**full mode — use Glob (NOT git diff):**
+Use Glob to collect ALL files in `src/` and `src-tauri/src/`. This reviews the entire codebase regardless of git changes.
+- `src/**/*` (exclude `*.md`, `*.test.ts`, `*.test.tsx`)
+- `src-tauri/src/**/*` (exclude `*.md`)
 
-**Full mode:**
-Use Glob to find:
-- `src/**/*.ts` and `src/**/*.tsx` (exclude `*.test.ts`, `*.test.tsx`)
-- `src-tauri/src/**/*.rs`
+**diff mode — use git diff (NOT Glob):**
+Run `git diff --name-only main` via Bash to get changed files. Exclude `*.md` files and test files (`*.test.ts`, `*.test.tsx`).
 
 ### Validate
 
