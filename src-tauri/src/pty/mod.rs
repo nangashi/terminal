@@ -125,19 +125,29 @@ precmd_functions+=(__terminal_osc7_precmd)
 /// Wrapper script for `wsl.exe -e sh -c '...'` that sets up OSC 7
 /// CWD reporting for both bash (`PROMPT_COMMAND`) and zsh (`ZDOTDIR`
 /// trick with `precmd` hook) inside WSL, then execs the user's login shell.
-const WSL_WRAPPER: &str = r#"_d=/tmp/.terminal-osc7
-mkdir -p "$_d" 2>/dev/null
-cat > "$_d/.zshenv" << 'ZSHENV'
-if [ -n "$_TERMINAL_ORIG_ZDOTDIR" ]; then ZDOTDIR="$_TERMINAL_ORIG_ZDOTDIR"; else unset ZDOTDIR; fi
-unset _TERMINAL_ORIG_ZDOTDIR
-[ -f "${ZDOTDIR:-$HOME}/.zshenv" ] && . "${ZDOTDIR:-$HOME}/.zshenv"
-__terminal_osc7_precmd() { printf '\033]7;file://%s%s\a' "$(hostname)" "$PWD"; }
-precmd_functions+=(__terminal_osc7_precmd)
-ZSHENV
-export _TERMINAL_ORIG_ZDOTDIR="${ZDOTDIR:-}"
-export ZDOTDIR="$_d"
-export PROMPT_COMMAND='printf '"'"'\033]7;file://%s%s\a'"'"' "$(hostname)" "$PWD"'
-exec "$SHELL" -l"#;
+///
+/// IMPORTANT: This MUST be a single line (semicolons, no newlines).
+/// Windows `CreateProcessW` passes the command line as a single string,
+/// and `wsl.exe` / `CommandLineToArgvW` cannot reliably handle newlines
+/// embedded in quoted arguments.
+const WSL_WRAPPER: &str = concat!(
+    r#"_d=/tmp/.terminal-osc7; "#,
+    r#"mkdir -p "$_d" 2>/dev/null; "#,
+    // Write .zshenv using printf instead of heredoc (heredoc requires newlines).
+    r#"printf '%s\n' "#,
+    r#"'if [ -n "$_TERMINAL_ORIG_ZDOTDIR" ]; then ZDOTDIR="$_TERMINAL_ORIG_ZDOTDIR"; else unset ZDOTDIR; fi' "#,
+    r#"'unset _TERMINAL_ORIG_ZDOTDIR' "#,
+    r#"'[ -f "${ZDOTDIR:-$HOME}/.zshenv" ] && . "${ZDOTDIR:-$HOME}/.zshenv"' "#,
+    // Single-quote escaping: '"'"' ends the single-quoted string, adds a
+    // double-quoted single quote, and re-opens the single-quoted string.
+    r#"'__terminal_osc7_precmd() { printf '"'"'\033]7;file://%s%s\a'"'"' "$(hostname)" "$PWD"; }' "#,
+    r#"'precmd_functions+=(__terminal_osc7_precmd)' "#,
+    r#"> "$_d/.zshenv"; "#,
+    r#"export _TERMINAL_ORIG_ZDOTDIR="${ZDOTDIR:-}"; "#,
+    r#"export ZDOTDIR="$_d"; "#,
+    r#"export PROMPT_COMMAND='printf '"'"'\033]7;file://%s%s\a'"'"' "$(hostname)" "$PWD"'; "#,
+    r#"exec "$SHELL" -l"#,
+);
 
 /// Returns the default home directory for the current platform.
 /// Tries `HOME` first, then `USERPROFILE` (Windows), with a safe fallback.
